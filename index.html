@@ -530,7 +530,7 @@ async function renderCompromisos() {
   const { data } = await sb.from('compromisos').select('*,conductores(codigo,nombre,flotas(nombre))').order('fecha_limite');
   document.getElementById('main-content').innerHTML=`
     <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Compromisos vehiculares</h2>
-    <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-comp" placeholder="Buscar por conductor, código o descripción..." oninput="filtrarCompromisos()" data-original='${JSON.stringify(data||[]).replace(/'/g,"\\'")'><span class="search-count" id="cnt-comp">${data?.length||0} registros</span></div>
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-comp" placeholder="Buscar por conductor, código o descripción..." oninput="filtrarCompromisos()"><span class="search-count" id="cnt-comp">${data?.length||0} registros</span></div>
     <div id="comp-list"></div>`;
   window._compData=data||[];
   renderCompList(data||[]);
