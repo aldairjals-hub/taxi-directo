@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Taxi Directo — Sistema de Gestión</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--blue:#1A56DB;--blue-dark:#1240A8;--blue-light:#EBF2FF;--gray-50:#F8FAFC;--gray-100:#F1F5F9;--gray-200:#E2E8F0;--gray-400:#94A3B8;--gray-600:#475569;--gray-800:#1E293B;--green:#0F6E56;--green-bg:#E1F5EE;--red:#B91C1C;--red-bg:#FEE2E2;--amber:#92400E;--amber-bg:#FEF3C7}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--gray-50);color:var(--gray-800)}
+    /* LOGIN */
+    #login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,var(--blue-dark) 0%,var(--blue) 100%)}
+    .login-card{background:#fff;border-radius:16px;padding:40px;width:400px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+    .login-logo{display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center}
+    .login-logo-mark{width:44px;height:44px;border-radius:10px;background:var(--blue);display:flex;align-items:center;justify-content:center}
+    .login-logo-mark span{color:#fff;font-size:16px;font-weight:700}
+    .login-title{font-size:22px;font-weight:700;color:var(--gray-800)}
+    .login-sub{font-size:13px;color:var(--gray-400);margin-top:2px;text-align:center}
+    .form-group{margin-bottom:16px}
+    .form-label{font-size:11px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:6px}
+    .form-input{width:100%;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:13px;font-family:inherit;color:var(--gray-800);transition:border-color .15s}
+    .form-input:focus{outline:none;border-color:var(--blue)}
+    .btn-login{width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .15s;margin-top:8px}
+    .btn-login:hover{background:var(--blue-dark)}
+    .btn-login:disabled{opacity:.6;cursor:not-allowed}
+    .login-error{background:var(--red-bg);color:var(--red);padding:10px 14px;border-radius:8px;font-size:12px;margin-top:12px;border:1px solid #FECACA;display:none}
+    /* APP */
+    #app{display:none;flex-direction:column;height:100vh}
+    /* TOP HEADER */
+    .header{background:var(--blue-dark);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .header-logo{display:flex;align-items:center;gap:10px}
+    .header-logo-mark{width:30px;height:30px;border-radius:7px;background:#fff;display:flex;align-items:center;justify-content:center}
+    .header-logo-mark span{font-size:12px;font-weight:700;color:var(--blue-dark)}
+    .header-title{font-size:15px;font-weight:700;color:#fff}
+    .header-right{display:flex;align-items:center;gap:12px}
+    .header-user{font-size:12px;color:rgba(255,255,255,.7)}
+    .header-role{font-size:10px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.1);padding:2px 8px;border-radius:20px;margin-left:6px}
+    .btn-logout{background:rgba(255,255,255,.15);color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit}
+    .btn-logout:hover{background:rgba(255,255,255,.25)}
+    /* NAV TABS */
+    .nav{background:#fff;border-bottom:1.5px solid var(--gray-200);padding:0 24px;display:flex;gap:2px;overflow-x:auto;flex-shrink:0}
+    .nav-item{padding:12px 16px;font-size:12px;font-weight:500;color:var(--gray-400);cursor:pointer;border-bottom:2.5px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:6px;transition:all .15s}
+    .nav-item:hover{color:var(--gray-800)}
+    .nav-item.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:700}
+    .nav-badge{font-size:9px;padding:1px 5px;border-radius:20px;background:#EF4444;color:#fff;font-weight:700}
+    /* CONTENT */
+    .content{flex:1;overflow-y:auto;padding:20px 24px}
+    /* CARDS */
+    .card{background:#fff;border:1.5px solid var(--gray-200);border-radius:12px;padding:16px;margin-bottom:14px}
+    .card-title{font-size:13px;font-weight:700;color:var(--gray-800);margin-bottom:12px}
+    /* METRICS */
+    .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+    .metric-card{background:#fff;border:1.5px solid var(--gray-200);border-radius:12px;padding:14px 16px}
+    .metric-icon{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;font-size:18px}
+    .ic-blue{background:var(--blue-light);color:var(--blue)}
+    .ic-green{background:var(--green-bg);color:var(--green)}
+    .ic-red{background:var(--red-bg);color:var(--red)}
+    .ic-amber{background:var(--amber-bg);color:var(--amber)}
+    .metric-val{font-size:24px;font-weight:700;color:var(--gray-800);margin-bottom:2px}
+    .metric-lbl{font-size:11px;color:var(--gray-400);font-weight:500}
+    .metric-sub{font-size:10px;margin-top:3px;color:var(--gray-400)}
+    /* BADGES */
+    .badge{display:inline-flex;align-items:center;gap:2px;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600}
+    .badge-ok{background:var(--green-bg);color:var(--green)}
+    .badge-warn{background:var(--amber-bg);color:var(--amber)}
+    .badge-danger{background:var(--red-bg);color:var(--red)}
+    .badge-info{background:var(--blue-light);color:var(--blue)}
+    .badge-gray{background:var(--gray-100);color:var(--gray-600)}
+    /* TABLE */
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th{text-align:left;padding:8px 10px;font-size:9px;font-weight:700;color:var(--gray-400);border-bottom:1.5px solid var(--gray-200);text-transform:uppercase;letter-spacing:.05em}
+    td{padding:10px 10px;border-bottom:1px solid var(--gray-100);color:var(--gray-800);vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:var(--gray-50)}
+    /* FORMS */
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+    .form-field{display:flex;flex-direction:column;gap:4px}
+    input[type=text],input[type=email],input[type=date],input[type=file],select,textarea{padding:9px 12px;border-radius:8px;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-800);font-size:13px;width:100%;font-family:inherit;transition:border-color .15s}
+    input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
+    .btn{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-800);display:inline-flex;align-items:center;gap:6px;font-family:inherit;transition:all .15s}
+    .btn:hover{background:var(--gray-100)}
+    .btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+    .btn-primary:hover{background:var(--blue-dark)}
+    .btn-sm{padding:5px 10px;font-size:11px}
+    .btn-danger{background:var(--red-bg);color:var(--red);border-color:#FECACA}
+    /* ALERTS */
+    .alert{border-radius:9px;padding:12px 14px;margin-bottom:12px;border:1.5px solid}
+    .alert-success{background:var(--green-bg);border-color:#6EE7B7}
+    .alert-success .alert-title{color:var(--green);font-size:12px;font-weight:700}
+    .alert-info{background:var(--blue-light);border-color:#BFDBFE}
+    .alert-info .alert-title{color:var(--blue-dark);font-size:12px;font-weight:700}
+    .alert-warn{background:var(--amber-bg);border-color:#FCD34D}
+    .alert-warn .alert-title{color:var(--amber);font-size:12px;font-weight:700}
+    /* SEARCH BAR */
+    .search-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border:1.5px solid var(--gray-200);border-radius:10px;margin-bottom:14px}
+    .search-bar i{color:var(--gray-400);font-size:18px}
+    .search-bar input{border:none;background:transparent;font-size:13px;flex:1;font-family:inherit;outline:none;color:var(--gray-800)}
+    .search-bar input::placeholder{color:var(--gray-400)}
+    .search-count{font-size:11px;color:var(--gray-400);padding:2px 8px;background:var(--gray-100);border-radius:20px;white-space:nowrap}
+    /* LOADER */
+    .loader{text-align:center;padding:40px;color:var(--gray-400);font-size:13px}
+    .loader i{font-size:32px;display:block;margin-bottom:8px;animation:spin 1s linear infinite}
+    @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+    /* PROGRESS BAR */
+    .progress-wrap{margin-bottom:8px}
+    .progress-meta{display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px}
+    .progress-bg{height:8px;background:var(--gray-100);border-radius:4px;overflow:hidden}
+    .progress-fill{height:100%;border-radius:4px;transition:width .4s}
+    /* RESPONSIVE */
+    @media(max-width:768px){
+      .metrics-grid{grid-template-columns:repeat(2,1fr)}
+      .form-grid{grid-template-columns:1fr}
+      .nav{padding:0 12px}
+      .content{padding:14px}
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ LOGIN ═══ -->
+<div id="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-mark"><span>TD</span></div>
+      <div>
+        <div class="login-title">Taxi Directo</div>
+        <div class="login-sub">Sistema de Gestión de Flota</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Correo electrónico</label>
+      <input type="email" id="login-email" class="form-input" placeholder="tu@taxidirecto.com">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Contraseña</label>
+      <input type="password" id="login-password" class="form-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn-login" id="login-btn" onclick="doLogin()">
+      <i class="ti ti-login"></i> Ingresar
+    </button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="app">
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-logo">
+      <div class="header-logo-mark"><span>TD</span></div>
+      <div class="header-title">Taxi Directo</div>
+    </div>
+    <div class="header-right">
+      <span class="header-user" id="user-name">—</span>
+      <span class="header-role" id="user-role">—</span>
+      <button class="btn-logout" onclick="doLogout()"><i class="ti ti-logout"></i> Salir</button>
+    </div>
+  </div>
+
+  <!-- NAV -->
+  <div class="nav" id="nav-tabs"></div>
+
+  <!-- CONTENT -->
+  <div class="content" id="main-content">
+    <div class="loader"><i class="ti ti-loader"></i>Cargando...</div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+// CONFIGURACIÓN SUPABASE
+// ══════════════════════════════════════════
+const SUPABASE_URL = 'https://rvqyeqxbbjqmezwpfmug.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ2cXllcXhiYmpxbWV6d3BmbXVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NzUzODAsImV4cCI6MjA5NTA1MTM4MH0.Zvt9dPqFzOQ40mX_hFeR2Ph00FR9zASx1-B0VVkpVJU';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+let currentUser = null;
+let currentPerfil = null;
+let currentTab = 'dashboard';
+
+// ══════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-password').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  if (!email || !pass) { showError('Completa email y contraseña'); return; }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader"></i> Ingresando...';
+  err.style.display = 'none';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if (error) { showError(error.message === 'Invalid login credentials' ? 'Email o contraseña incorrectos' : error.message); btn.disabled = false; btn.innerHTML = '<i class="ti ti-login"></i> Ingresar'; return; }
+  await iniciarApp(data.user);
+}
+
+function showError(msg) {
+  const err = document.getElementById('login-error');
+  err.textContent = msg;
+  err.style.display = 'block';
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+  currentUser = null; currentPerfil = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-page').style.display = 'flex';
+}
+
+async function iniciarApp(user) {
+  currentUser = user;
+  // Cargar perfil desde tabla usuarios
+  const { data: perfil } = await sb.from('usuarios').select('*').eq('id', user.id).single();
+  currentPerfil = perfil;
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('user-name').textContent = perfil?.nombre || user.email;
+  document.getElementById('user-role').textContent = perfil?.rol || 'usuario';
+  buildNav(perfil?.rol || 'inspector');
+  loadTab('dashboard');
+}
+
+// ══════════════════════════════════════════
+// NAVEGACIÓN
+// ══════════════════════════════════════════
+const TABS = {
+  admin: [
+    { id:'dashboard', label:'Dashboard', icon:'ti-layout-dashboard' },
+    { id:'inspeccion', label:'Nueva inspección', icon:'ti-clipboard-check' },
+    { id:'buscar', label:'Buscar conductor', icon:'ti-search' },
+    { id:'bloqueos', label:'Bloqueos', icon:'ti-lock', badge:true },
+    { id:'compromisos', label:'Compromisos', icon:'ti-alert-triangle', badge:true },
+    { id:'incidencias', label:'Incidencias', icon:'ti-exclamation-circle' },
+    { id:'activos', label:'Activos + SLA', icon:'ti-package' },
+    { id:'padron', label:'Gestión padrón', icon:'ti-upload' },
+    { id:'usuarios', label:'Usuarios', icon:'ti-users' },
+  ],
+  inspector: [
+    { id:'dashboard', label:'Dashboard', icon:'ti-layout-dashboard' },
+    { id:'inspeccion', label:'Nueva inspección', icon:'ti-clipboard-check' },
+    { id:'buscar', label:'Buscar conductor', icon:'ti-search' },
+    { id:'bloqueos', label:'Bloqueos', icon:'ti-lock', badge:true },
+    { id:'activos', label:'Activos', icon:'ti-package' },
+  ],
+  ejecutivo: [
+    { id:'dashboard', label:'Dashboard', icon:'ti-layout-dashboard' },
+    { id:'inspeccion', label:'Inspección', icon:'ti-clipboard-check' },
+    { id:'buscar', label:'Buscar conductor', icon:'ti-search' },
+    { id:'compromisos', label:'Compromisos', icon:'ti-alert-triangle' },
+    { id:'incidencias', label:'Incidencias', icon:'ti-exclamation-circle' },
+  ],
+  calidad: [
+    { id:'buscar', label:'Historial conductores', icon:'ti-search' },
+    { id:'dashboard', label:'Resumen', icon:'ti-layout-dashboard' },
+  ],
+};
+
+function buildNav(rol) {
+  const tabs = TABS[rol] || TABS.inspector;
+  document.getElementById('nav-tabs').innerHTML = tabs.map(t => `
+    <div class="nav-item ${t.id===currentTab?'active':''}" onclick="loadTab('${t.id}')" id="nav-${t.id}">
+      <i class="ti ${t.icon}"></i>${t.label}${t.badge?`<span class="nav-badge" id="badge-${t.id}">0</span>`:''}
+    </div>`).join('');
+}
+
+function setActiveNav(tab) {
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const el = document.getElementById('nav-'+tab);
+  if(el) el.classList.add('active');
+}
+
+// ══════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════
+async function loadTab(tab) {
+  currentTab = tab;
+  setActiveNav(tab);
+  const c = document.getElementById('main-content');
+  c.innerHTML = '<div class="loader"><i class="ti ti-loader"></i>Cargando...</div>';
+  const fns = { dashboard:renderDashboard, inspeccion:renderInspeccion, buscar:renderBuscar, bloqueos:renderBloqueos, compromisos:renderCompromisos, incidencias:renderIncidencias, activos:renderActivos, padron:renderPadron, usuarios:renderUsuarios };
+  if(fns[tab]) await fns[tab]();
+  else c.innerHTML = '<div class="loader">Módulo en construcción</div>';
+}
+
+// ══════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════
+async function renderDashboard() {
+  const mesActual = new Date().toISOString().slice(0,7);
+  const [{ count: totalCond }, { count: totalInsp }, { count: bloqueos }, { count: incidencias }] = await Promise.all([
+    sb.from('conductores').select('*',{count:'exact',head:true}).neq('estado','desactivado'),
+    sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('mes_referencia',mesActual),
+    sb.from('bloqueos').select('*',{count:'exact',head:true}).eq('confirmado',true).eq('subsanado',false),
+    sb.from('incidencias').select('*',{count:'exact',head:true}).eq('estado','abierta'),
+  ]);
+  const pct = totalCond ? Math.round((totalInsp/totalCond)*100) : 0;
+  const pctColor = pct>=80?'#22C55E':pct>=50?'#F59E0B':'#EF4444';
+  const mes = new Date().toLocaleString('es-PE',{month:'long',year:'numeric'});
+
+  document.getElementById('main-content').innerHTML = `
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Dashboard — ${mes.charAt(0).toUpperCase()+mes.slice(1)}</h2>
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-clipboard-check"></i></div><div class="metric-val">${totalInsp||0}</div><div class="metric-lbl">Inspecciones este mes</div><div class="metric-sub">de ${totalCond||0} en padrón</div></div>
+      <div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-chart-pie"></i></div><div class="metric-val" style="color:${pctColor}">${pct}%</div><div class="metric-lbl">Avance mensual</div><div class="metric-sub">${(totalCond||0)-(totalInsp||0)} pendientes</div></div>
+      <div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-lock"></i></div><div class="metric-val" style="color:var(--red)">${bloqueos||0}</div><div class="metric-lbl">Conductores bloqueados</div><div class="metric-sub">sin inspección</div></div>
+      <div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-exclamation-circle"></i></div><div class="metric-val">${incidencias||0}</div><div class="metric-lbl">Incidencias abiertas</div><div class="metric-sub">este mes</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Avance de inspecciones</div>
+      <div class="progress-wrap"><div class="progress-meta"><span style="font-size:12px;font-weight:600">${totalInsp||0} de ${totalCond||0} conductores inspeccionados</span><span style="font-weight:700;color:${pctColor}">${pct}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${pct}%;background:${pctColor}"></div></div></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin-bottom:0">Conductores registrados en padrón</div>
+        <button class="btn btn-primary btn-sm" onclick="loadTab('inspeccion')"><i class="ti ti-clipboard-check"></i> Nueva inspección</button>
+      </div>
+      <div id="dash-conductores"><div class="loader"><i class="ti ti-loader"></i>Cargando conductores...</div></div>
+    </div>`;
+  // Cargar tabla de conductores
+  const { data: conds } = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,flotas(nombre)').neq('estado','desactivado').order('nombre').limit(20);
+  if(!conds?.length){ document.getElementById('dash-conductores').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">No hay conductores cargados aún. <button class="btn btn-sm btn-primary" onclick="loadTab(\'padron\')">Cargar padrón</button></p>'; return; }
+  document.getElementById('dash-conductores').innerHTML=`<table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Vehículo</th><th>Estado</th></tr></thead><tbody>${
+    conds.map(c=>`<tr><td style="font-family:monospace">${c.codigo}</td><td style="font-weight:600">${c.nombre}</td><td><span class="badge badge-info">${c.flotas?.nombre||'—'}</span></td><td style="color:var(--gray-600)">${c.vehiculo||'—'} ${c.placa?'· '+c.placa:''}</td><td><span class="badge ${c.estado==='activo'?'badge-ok':c.estado==='congelado'?'badge-warn':'badge-gray'}">${c.estado}</span></td></tr>`).join('')
+  }</tbody></table>`;
+  // Badges en nav
+  if(document.getElementById('badge-bloqueos')) document.getElementById('badge-bloqueos').textContent=bloqueos||0;
+}
+
+// ══════════════════════════════════════════
+// NUEVA INSPECCIÓN
+// ══════════════════════════════════════════
+async function renderInspeccion() {
+  const { data: campos } = await sb.from('formulario_campos').select('*').eq('formulario','inspeccion').eq('activo',true).order('orden');
+  document.getElementById('main-content').innerHTML = `
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Nueva inspección</h2>
+    <div class="card" style="max-width:620px">
+      <div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px">Paso 1 — Identificar conductor</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label><input type="text" id="insp-cod" placeholder="TD-0042" oninput="buscarConductorInsp()"></div>
+        <div class="form-field"><label class="form-label">Tipo de inspección</label><select id="insp-tipo"><option value="mensual">Mensual</option><option value="subsanacion">Subsanación de mes anterior</option></select></div>
+      </div>
+      <div id="insp-conductor-result" style="display:none;background:var(--blue-light);border:1.5px solid #BFDBFE;border-radius:9px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          <div><div style="font-size:10px;color:var(--blue);font-weight:700;text-transform:uppercase;margin-bottom:2px">Nombre</div><div style="font-size:13px;font-weight:600;color:var(--blue-dark)" id="ic-nombre">—</div></div>
+          <div><div style="font-size:10px;color:var(--blue);font-weight:700;text-transform:uppercase;margin-bottom:2px">Vehículo · Placa</div><div style="font-size:13px;font-weight:600;color:var(--blue-dark)" id="ic-vehiculo">—</div></div>
+          <div><div style="font-size:10px;color:var(--blue);font-weight:700;text-transform:uppercase;margin-bottom:2px">Flota</div><div style="font-size:13px;font-weight:600;color:var(--blue-dark)" id="ic-flota">—</div></div>
+        </div>
+      </div>
+      <div id="insp-form-body" style="display:none">
+        <div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px">Paso 2 — Inspector y fecha</div>
+        <div class="form-grid">
+          <div class="form-field"><label class="form-label">Inspector / Evaluador</label><select id="insp-evaluador"><option value="${currentUser?.id}">${currentPerfil?.nombre||'Yo'}</option></select></div>
+          <div class="form-field"><label class="form-label">Fecha de inspección</label><input type="date" id="insp-fecha" value="${new Date().toISOString().slice(0,10)}"></div>
+        </div>
+        <div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px;margin-top:4px">Paso 3 — Evaluación</div>
+        <div id="insp-campos">${renderCamposInsp(campos)}</div>
+        <div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px">Paso 4 — Activos a reponer</div>
+        <div id="insp-activos" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px">${renderActivosCheckbox()}</div>
+        <div class="form-field" style="margin-bottom:14px"><label class="form-label">Observación general (opcional)</label><textarea id="insp-obs" rows="2" placeholder="Comentarios adicionales..."></textarea></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="guardarInspeccion()"><i class="ti ti-check"></i> Registrar inspección</button>
+          <button class="btn" onclick="loadTab('inspeccion')">Cancelar</button>
+        </div>
+      </div>
+      <div id="insp-success" style="display:none" class="alert alert-success"><div class="alert-title"><i class="ti ti-circle-check"></i> Inspección registrada correctamente</div><div style="font-size:11px;color:var(--green);margin-top:4px">El historial del conductor ha sido actualizado.</div><button class="btn btn-sm btn-primary" style="margin-top:10px" onclick="loadTab('inspeccion')"><i class="ti ti-plus"></i> Nueva inspección</button></div>
+    </div>`;
+  window._inspConductor = null;
+}
+
+function renderCamposInsp(campos) {
+  if(!campos?.length) return '<p style="color:var(--gray-400);font-size:12px">No hay campos configurados. Ve al Constructor de formularios.</p>';
+  let html=''; let secActual='';
+  campos.forEach((f,i)=>{
+    if(f.seccion!==secActual){ secActual=f.seccion; html+=`<div style="font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px">${f.seccion}</div>`; }
+    let inp='';
+    if(f.tipo==='escala') inp=`<div style="display:flex;gap:8px;margin-top:6px">${[1,2,3,4,5].map(n=>`<label style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:var(--gray-400);cursor:pointer;padding:7px;border:1.5px solid var(--gray-200);border-radius:7px;text-align:center"><input type="radio" name="campo_${f.id}" value="${n}" style="accent-color:var(--blue)"> ${n}</label>`).join('')}</div>`;
+    else if(f.tipo==='sino') inp=`<div style="display:flex;gap:8px;margin-top:6px"><label style="flex:1;display:flex;align-items:center;gap:6px;padding:9px;border:1.5px solid var(--gray-200);border-radius:7px;cursor:pointer;font-size:12px"><input type="radio" name="campo_${f.id}" value="si" style="accent-color:var(--green)"> Sí</label><label style="flex:1;display:flex;align-items:center;gap:6px;padding:9px;border:1.5px solid var(--gray-200);border-radius:7px;cursor:pointer;font-size:12px"><input type="radio" name="campo_${f.id}" value="no" style="accent-color:var(--red)"> No</label></div>`;
+    else if(f.tipo==='opciones') inp=`<select name="campo_${f.id}" style="margin-top:6px"><option value="">Seleccionar...</option>${(f.opciones||[]).map(o=>`<option>${o}</option>`).join('')}</select>`;
+    else inp=`<input type="text" name="campo_${f.id}" placeholder="Respuesta..." style="margin-top:6px">`;
+    html+=`<div style="padding:9px 0;border-bottom:1px solid var(--gray-100)"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:12px;font-weight:600">${f.nombre}${f.obligatorio?'<span style="color:var(--red);margin-left:2px">*</span>':''}</div><span class="badge badge-gray">${f.seccion}</span></div>${inp}<div style="margin-top:6px"><details><summary style="font-size:10px;color:var(--blue);cursor:pointer">+ Comentario del inspector</summary><textarea rows="1" name="comentario_${f.id}" placeholder="Observación específica para este campo..." style="margin-top:5px;font-size:11px"></textarea></details></div></div>`;
+  });
+  return html;
+}
+
+function renderActivosCheckbox() {
+  const activos=[{id:'corbata',nm:'Corbata',ic:'ti-tie',subs:null},{id:'fotocheck',nm:'Fotocheck',ic:'ti-id',subs:['Lanyard','Acrílico','Tarjeta PVC']},{id:'kit',nm:'Kit identificación',ic:'ti-badge',subs:['Cabecera','Credencial']},{id:'cargador',nm:'Cable cargador',ic:'ti-plug',subs:null},{id:'charging',nm:'Charging spot',ic:'ti-device-mobile-charging',subs:null}];
+  return activos.map(a=>{
+    const subs=a.subs?`<div style="margin-top:6px;padding-left:10px;display:flex;flex-wrap:wrap;gap:5px">${a.subs.map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" name="sub_${a.id}" value="${s}" style="accent-color:var(--blue)"> ${s}</label>`).join('')}</div>`:'';
+    return `<div style="border:1.5px solid var(--gray-200);border-radius:9px;padding:11px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="activo" value="${a.id}" style="width:16px;height:16px;accent-color:var(--blue);flex-shrink:0"><i class="ti ${a.ic}" style="font-size:18px;color:var(--gray-400)"></i><div><div style="font-size:12px;font-weight:600">${a.nm}</div>${a.subs?`<div style="font-size:10px;color:var(--gray-400)">Selecciona subpartes</div>`:''}</div></label>${subs}</div>`;
+  }).join('');
+}
+
+let _inspConductorId=null;
+async function buscarConductorInsp() {
+  const cod=document.getElementById('insp-cod').value.trim().toUpperCase();
+  if(cod.length<3){document.getElementById('insp-conductor-result').style.display='none';document.getElementById('insp-form-body').style.display='none';return;}
+  const {data}=await sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,flotas(nombre)').eq('codigo',cod).single();
+  if(!data){document.getElementById('insp-conductor-result').style.display='none';document.getElementById('insp-form-body').style.display='none';return;}
+  _inspConductorId=data.id;
+  document.getElementById('ic-nombre').textContent=data.nombre;
+  document.getElementById('ic-vehiculo').textContent=(data.vehiculo||'—')+(data.placa?' · '+data.placa:'');
+  document.getElementById('ic-flota').textContent=data.flotas?.nombre||'—';
+  document.getElementById('insp-conductor-result').style.display='block';
+  document.getElementById('insp-form-body').style.display='block';
+}
+
+async function guardarInspeccion() {
+  if(!_inspConductorId){alert('Busca primero un conductor válido');return;}
+  const fecha=document.getElementById('insp-fecha').value;
+  const tipo=document.getElementById('insp-tipo').value;
+  const mesRef=fecha.slice(0,7);
+  const obs=document.getElementById('insp-obs').value;
+  // Recopilar campos evaluados
+  const camposEval={};
+  document.querySelectorAll('[name^="campo_"]').forEach(el=>{if(el.checked||el.tagName==='SELECT'||el.tagName==='INPUT'){const k=el.name.replace('campo_','');if(!camposEval[k])camposEval[k]=el.value;}});
+  // Recopilar comentarios
+  document.querySelectorAll('[name^="comentario_"]').forEach(el=>{if(el.value)camposEval['comentario_'+el.name.replace('comentario_','')]=el.value;});
+  // Activos solicitados
+  const activos=[]; document.querySelectorAll('[name="activo"]:checked').forEach(el=>{const subs=[];document.querySelectorAll(`[name="sub_${el.value}"]:checked`).forEach(s=>subs.push(s.value));activos.push({activo:el.value,subpartes:subs});});
+  const {error}=await sb.from('inspecciones').insert({conductor_id:_inspConductorId,usuario_id:currentUser.id,fecha,tipo,mes_referencia:mesRef,observacion_general:obs,activos_solicitados:activos,campos_evaluados:camposEval});
+  if(error){alert('Error al guardar: '+error.message);return;}
+  document.getElementById('insp-form-body').style.display='none';
+  document.getElementById('insp-success').style.display='block';
+}
+
+// ══════════════════════════════════════════
+// BUSCAR CONDUCTOR (historial)
+// ══════════════════════════════════════════
+async function renderBuscar() {
+  document.getElementById('main-content').innerHTML = `
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Buscar conductor</h2>
+    <div class="card" style="max-width:620px">
+      <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-inp" placeholder="Código, placa o nombre del conductor..." oninput="buscarConductorHist()"><span class="search-count" id="bus-count"></span></div>
+      <div id="bus-sugg"></div>
+    </div>
+    <div id="hist-result" style="max-width:620px"></div>`;
+}
+
+async function buscarConductorHist() {
+  const v=document.getElementById('bus-inp').value.trim();
+  if(v.length<2){document.getElementById('bus-sugg').innerHTML='';return;}
+  const {data}=await sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,estado,flotas(nombre)').or(`codigo.ilike.%${v}%,nombre.ilike.%${v}%,placa.ilike.%${v}%`).limit(5);
+  document.getElementById('bus-count').textContent=data?.length?data.length+' resultados':'';
+  document.getElementById('bus-sugg').innerHTML=data?.length
+    ?`<div style="border:1.5px solid var(--gray-200);border-radius:9px;overflow:hidden">${data.map(c=>`<div style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between" onmouseenter="this.style.background='var(--blue-light)'" onmouseleave="this.style.background='#fff'" onclick="verHistorial('${c.id}')"><div><div style="font-size:13px;font-weight:600">${c.nombre}</div><div style="font-size:11px;color:var(--gray-400)">${c.codigo} · ${c.placa||'sin placa'} · ${c.flotas?.nombre||'—'}</div></div><span class="badge ${c.estado==='activo'?'badge-ok':c.estado==='congelado'?'badge-warn':'badge-gray'}">${c.estado}</span></div>`).join('')}</div>`
+    :'<p style="color:var(--gray-400);font-size:12px;padding:8px 0">Sin resultados</p>';
+}
+
+async function verHistorial(id) {
+  document.getElementById('bus-sugg').innerHTML='';
+  const [{ data: cond },{ data: insp },{ data: inc },{ data: comp }] = await Promise.all([
+    sb.from('conductores').select('*,flotas(nombre)').eq('id',id).single(),
+    sb.from('inspecciones').select('*,usuarios(nombre)').eq('conductor_id',id).order('fecha',{ascending:false}).limit(12),
+    sb.from('incidencias').select('*').eq('conductor_id',id).order('fecha',{ascending:false}).limit(10),
+    sb.from('compromisos').select('*').eq('conductor_id',id).order('fecha_limite',{ascending:false}).limit(10),
+  ]);
+  document.getElementById('bus-inp').value=cond.nombre;
+  const histItems=[
+    ...(insp||[]).map(i=>({tipo:'insp',titulo:`Inspección ${i.tipo==='subsanacion'?'— Subsanación':''} ${i.mes_referencia}`,detalle:`Evaluador: ${i.usuarios?.nombre||'—'}`,fecha:i.fecha,sub:i.tipo==='subsanacion'})),
+    ...(inc||[]).map(i=>({tipo:'inc',titulo:`Incidencia: ${i.tipo}`,detalle:i.descripcion,fecha:i.fecha})),
+    ...(comp||[]).map(c=>({tipo:'comp',titulo:c.titulo,detalle:`Plazo: ${c.fecha_limite||'—'}`,fecha:c.created_at?.slice(0,10),res:c.estado==='resuelto'})),
+  ].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+
+  document.getElementById('hist-result').innerHTML=`
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div><div style="font-size:16px;font-weight:700">${cond.nombre}</div><div style="font-size:11px;color:var(--gray-400);margin-top:2px">${cond.codigo} · ${cond.placa||'—'} · ${cond.vehiculo||'—'}</div></div>
+        <span class="badge ${cond.estado==='activo'?'badge-ok':cond.estado==='congelado'?'badge-warn':'badge-gray'}">${cond.estado}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:11px;background:var(--gray-50);border-radius:8px;margin-bottom:14px">
+        <div><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Flota</div><div style="font-size:12px;font-weight:600;margin-top:2px">${cond.flotas?.nombre||'—'}</div></div>
+        <div><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Inspecciones</div><div style="font-size:12px;font-weight:600;margin-top:2px">${insp?.length||0} registradas</div></div>
+        <div><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Incidencias</div><div style="font-size:12px;font-weight:600;margin-top:2px">${inc?.length||0} registradas</div></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--gray-800);margin-bottom:10px">Historial completo</div>
+      ${!histItems.length?'<p style="color:var(--gray-400);text-align:center;padding:20px">Sin historial registrado</p>':
+        histItems.map(h=>{
+          const icons={insp:'ti-clipboard-check',inc:'ti-exclamation-circle',comp:'ti-alert-triangle'};
+          const bgs={insp:'var(--blue-light)',inc:'var(--amber-bg)',comp:'var(--red-bg)'};
+          const colors={insp:'var(--blue)',inc:'var(--amber)',comp:'var(--red)'};
+          return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+            <div style="width:30px;height:30px;border-radius:50%;background:${bgs[h.tipo]};display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ${icons[h.tipo]}" style="color:${colors[h.tipo]};font-size:13px"></i></div>
+            <div style="flex:1"><div style="font-size:12px;font-weight:600">${h.titulo}${h.sub?' <span class="badge badge-ok">Subsanación</span>':''}</div><div style="font-size:11px;color:var(--gray-600)">${h.detalle}</div><div style="font-size:10px;color:var(--gray-400);margin-top:2px">${h.fecha||'—'}</div></div>
+          </div>`;}).join('')}
+    </div>`;
+}
+
+// ══════════════════════════════════════════
+// BLOQUEOS
+// ══════════════════════════════════════════
+async function renderBloqueos() {
+  const { data } = await sb.from('bloqueos').select('*,conductores(codigo,nombre,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Bloqueos pendientes</h2>
+    <div class="alert alert-warn"><div class="alert-title"><i class="ti ti-alert-triangle"></i> Conductores que deben ser bloqueados por no pasar inspección</div></div>
+    <div class="card">
+      <table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Tipo</th><th>Mes ref.</th><th>Estado</th><th>Acción</th></tr></thead>
+      <tbody>${!data?.length?'<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:20px">Sin bloqueos pendientes</td></tr>':
+        data.map(b=>`<tr>
+          <td style="font-family:monospace">${b.conductores?.codigo||'—'}</td>
+          <td style="font-weight:600">${b.conductores?.nombre||'—'}</td>
+          <td><span class="badge badge-info">${b.conductores?.flotas?.nombre||'—'}</span></td>
+          <td><span class="badge ${b.tipo==='inspeccion'?'badge-danger':'badge-warn'}">${b.tipo}</span></td>
+          <td>${b.mes_referencia||'—'}</td>
+          <td><span class="badge ${b.confirmado?'badge-danger':'badge-warn'}">${b.confirmado?'Bloqueado':'Por bloquear'}</span></td>
+          <td>${!b.confirmado?`<button class="btn btn-sm btn-danger" onclick="confirmarBloqueo('${b.id}')"><i class="ti ti-lock"></i> Confirmar</button>`:`<button class="btn btn-sm btn-primary" onclick="marcarSubsanado('${b.id}')"><i class="ti ti-check"></i> Subsanado</button>`}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+}
+
+async function confirmarBloqueo(id) {
+  await sb.from('bloqueos').update({confirmado:true,fecha_bloqueo:new Date().toISOString().slice(0,10),inspector_bloqueo:currentPerfil?.nombre}).eq('id',id);
+  renderBloqueos();
+}
+async function marcarSubsanado(id) {
+  await sb.from('bloqueos').update({subsanado:true,fecha_subsanacion:new Date().toISOString().slice(0,10)}).eq('id',id);
+  alert('✅ Conductor habilitado. SMS de alerta enviado a todos los inspectores (en producción).');
+  renderBloqueos();
+}
+
+// ══════════════════════════════════════════
+// COMPROMISOS
+// ══════════════════════════════════════════
+async function renderCompromisos() {
+  const { data } = await sb.from('compromisos').select('*,conductores(codigo,nombre,flotas(nombre))').order('fecha_limite');
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Compromisos vehiculares</h2>
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-comp" placeholder="Buscar por conductor, código o descripción..." oninput="filtrarCompromisos()" data-original='${JSON.stringify(data||[]).replace(/'/g,"\\'")'><span class="search-count" id="cnt-comp">${data?.length||0} registros</span></div>
+    <div id="comp-list"></div>`;
+  window._compData=data||[];
+  renderCompList(data||[]);
+}
+
+function filtrarCompromisos(){
+  const q=document.getElementById('bus-comp').value.trim().toLowerCase();
+  const fil=window._compData.filter(c=>!q||[c.conductores?.nombre,c.conductores?.codigo,c.titulo,c.descripcion].some(f=>f?.toLowerCase().includes(q)));
+  document.getElementById('cnt-comp').textContent=fil.length+' registros';
+  renderCompList(fil);
+}
+
+function renderCompList(data){
+  if(!data.length){document.getElementById('comp-list').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">Sin compromisos registrados</p>';return;}
+  document.getElementById('comp-list').innerHTML=data.map(c=>{
+    const hoy=new Date(); const lim=new Date(c.fecha_limite);
+    const dias=Math.round((lim-hoy)/(1000*60*60*24));
+    const badge=c.estado==='resuelto'?'badge-ok':dias<0?'badge-danger':dias<=3?'badge-warn':'badge-gray';
+    const label=c.estado==='resuelto'?'Resuelto':dias<0?'Vencido':dias<=3?'Próximo a vencer':'Pendiente';
+    return `<div class="card"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px"><div><div style="font-size:13px;font-weight:700">${c.titulo}</div><div style="font-size:11px;color:var(--gray-600);margin-top:3px">${c.conductores?.nombre||'—'} · ${c.conductores?.codigo||'—'} · <span class="badge badge-info">${c.conductores?.flotas?.nombre||'—'}</span></div></div><span class="badge ${badge}">${label}</span></div><div style="display:flex;align-items:center;gap:10px;margin-top:8px"><span style="font-size:11px;color:var(--gray-400)"><i class="ti ti-calendar"></i> Plazo: ${c.fecha_limite||'—'}</span>${c.estado!=='resuelto'?`<button class="btn btn-sm" onclick="resolverCompromiso('${c.id}')"><i class="ti ti-check"></i> Marcar resuelto</button>`:''}</div>${c.estado==='resuelto'?`<div style="background:var(--green-bg);border-left:3px solid #34D399;border-radius:0 7px 7px 0;padding:7px 10px;margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase">Subsanado · ${c.fecha_resolucion||'—'}</div><div style="font-size:11px;color:var(--gray-800)">${c.nota_resolucion||'—'}</div></div>`:''}</div>`;
+  }).join('');
+}
+
+async function resolverCompromiso(id){
+  const nota=prompt('Detalla la subsanación realizada:');if(!nota)return;
+  await sb.from('compromisos').update({estado:'resuelto',fecha_resolucion:new Date().toISOString().slice(0,10),nota_resolucion:nota,inspector_resolucion:currentPerfil?.nombre}).eq('id',id);
+  renderCompromisos();
+}
+
+// ══════════════════════════════════════════
+// INCIDENCIAS
+// ══════════════════════════════════════════
+async function renderIncidencias(){
+  const {data}=await sb.from('incidencias').select('*,conductores(codigo,nombre,flotas(nombre))').order('fecha',{ascending:false});
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Incidencias</h2>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="loadTab('inspeccion')"><i class="ti ti-plus"></i> Nueva incidencia</button></div>
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-inc" placeholder="Buscar por conductor, tipo o descripción..." oninput="filtrarInc()"><span class="search-count" id="cnt-inc">${data?.length||0} registros</span></div>
+    <div class="card"><table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Tipo</th><th>Descripción</th><th>Acción tomada</th><th>Fecha</th><th>Estado</th></tr></thead><tbody id="inc-tbody"></tbody></table></div>`;
+  window._incData=data||[];
+  renderIncTb(data||[]);
+}
+
+function filtrarInc(){
+  const q=document.getElementById('bus-inc').value.trim().toLowerCase();
+  const fil=window._incData.filter(i=>!q||[i.conductores?.nombre,i.conductores?.codigo,i.tipo,i.descripcion].some(f=>f?.toLowerCase().includes(q)));
+  document.getElementById('cnt-inc').textContent=fil.length+' registros';
+  renderIncTb(fil);
+}
+
+function renderIncTb(data){
+  document.getElementById('inc-tbody').innerHTML=!data.length?'<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin incidencias</td></tr>':
+    data.map(i=>`<tr><td style="font-family:monospace;font-size:10px">${i.conductores?.codigo||'—'}</td><td style="font-weight:600">${i.conductores?.nombre||'—'}</td><td><span class="badge badge-info">${i.conductores?.flotas?.nombre||'—'}</span></td><td>${i.tipo}</td><td style="color:var(--gray-600)">${i.descripcion}</td><td>${i.accion_tomada?`<span style="font-size:11px">${i.accion_tomada}</span>`:`<button class="btn btn-sm" onclick="registrarAccion('${i.id}')"><i class="ti ti-edit"></i> Registrar</button>`}</td><td style="font-size:10px;color:var(--gray-400)">${i.fecha}</td><td><span class="badge ${i.estado==='abierta'?'badge-danger':'badge-ok'}">${i.estado}</span></td></tr>`).join('');
+}
+
+async function registrarAccion(id){
+  const a=prompt('Acción tomada:');if(!a)return;
+  await sb.from('incidencias').update({accion_tomada:a,responsable_accion:currentPerfil?.nombre,fecha_accion:new Date().toISOString().slice(0,10),estado:'cerrada'}).eq('id',id);
+  renderIncidencias();
+}
+
+// ══════════════════════════════════════════
+// ACTIVOS
+// ══════════════════════════════════════════
+async function renderActivos(){
+  const {data}=await sb.from('solicitudes_activos').select('*,conductores(codigo,nombre,flotas(nombre)),usuarios(nombre)').order('created_at',{ascending:false});
+  const pendientes=(data||[]).filter(s=>!s.fecha_paso4);
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Activos + SLA</h2>
+    <div class="metrics-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-package"></i></div><div class="metric-val">${data?.length||0}</div><div class="metric-lbl">Total solicitudes</div></div>
+      <div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-clock"></i></div><div class="metric-val" style="color:var(--amber)">${pendientes.length}</div><div class="metric-lbl">Pendientes de entrega</div></div>
+      <div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-alert-circle"></i></div><div class="metric-val" style="color:var(--red)">${pendientes.filter(s=>(s.dias_sla||0)>3).length||pendientes.filter(s=>{const dias=Math.round((new Date()-new Date(s.created_at))/(1000*60*60*24));return dias>3;}).length}</div><div class="metric-lbl">Fuera de SLA (>3 días)</div></div>
+    </div>
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-act" placeholder="Buscar por conductor, código o activo..." oninput="filtrarAct()"><span class="search-count" id="cnt-act">${data?.length||0} registros</span></div>
+    <div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div style="font-size:13px;font-weight:700">Solicitudes de activos</div><button class="btn btn-sm"><i class="ti ti-download"></i> Exportar</button></div>
+    <table><thead><tr><th>Conductor</th><th>Flota</th><th>Activo</th><th>Inspector</th><th>Paso 1</th><th>Paso 4 (entrega)</th><th>SLA</th><th>Estado</th></tr></thead><tbody id="act-tbody"></tbody></table></div>`;
+  window._actData=data||[];
+  renderActTb(data||[]);
+}
+
+function filtrarAct(){
+  const q=document.getElementById('bus-act').value.trim().toLowerCase();
+  const fil=window._actData.filter(a=>!q||[a.conductores?.nombre,a.conductores?.codigo,a.activo].some(f=>f?.toLowerCase().includes(q)));
+  document.getElementById('cnt-act').textContent=fil.length+' registros';
+  renderActTb(fil);
+}
+
+function renderActTb(data){
+  document.getElementById('act-tbody').innerHTML=!data.length?'<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin solicitudes</td></tr>':
+    data.map(a=>{
+      const dias=a.dias_sla??Math.round((new Date()-new Date(a.created_at))/(1000*60*60*24));
+      const slaOk=dias<=(a.sla_target_dias||3);
+      const entregado=!!a.fecha_paso4;
+      return `<tr><td style="font-weight:600">${a.conductores?.nombre||'—'}<div style="font-size:10px;color:var(--gray-400)">${a.conductores?.codigo||'—'}</div></td><td><span class="badge badge-info">${a.conductores?.flotas?.nombre||'—'}</span></td><td>${a.activo}${a.subpartes?.length?`<div style="font-size:10px;color:var(--gray-400)">${a.subpartes.join(', ')}</div>`:''}</td><td style="font-size:11px;color:var(--gray-600)">${a.usuarios?.nombre||'—'}</td><td style="font-size:11px">${a.fecha_paso1||'—'}</td><td>${a.fecha_paso4?`<span style="font-size:11px;color:var(--green);font-weight:600">${a.fecha_paso4}</span>`:`<input type="date" style="font-size:10px;padding:4px 7px;width:130px" onchange="registrarEntrega('${a.id}',this.value)">`}</td><td><span class="badge ${entregado?(slaOk?'badge-ok':'badge-danger'):'badge-warn'}">${entregado?dias+'d':'En curso'}</span></td><td><span class="badge ${entregado?'badge-ok':'badge-warn'}">${entregado?'Entregado':'Pendiente'}</span></td></tr>`;
+    }).join('');
+}
+
+async function registrarEntrega(id,fecha){
+  const por=prompt('¿Quién entrega el activo?',currentPerfil?.nombre||'');
+  if(!por)return;
+  const {data:sol}=await sb.from('solicitudes_activos').select('created_at').eq('id',id).single();
+  const dias=Math.round((new Date(fecha)-new Date(sol.created_at))/(1000*60*60*24));
+  await sb.from('solicitudes_activos').update({fecha_paso4:fecha,entregado_por:por,dias_sla:dias}).eq('id',id);
+  renderActivos();
+}
+
+// ══════════════════════════════════════════
+// CARGA DE PADRÓN
+// ══════════════════════════════════════════
+async function renderPadron(){
+  const {data:flotas}=await sb.from('flotas').select('*');
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Gestión de padrón</h2>
+    <div class="card" style="max-width:600px">
+      <div class="card-title">Cargar padrón semanal (CSV o Excel)</div>
+      <div class="alert alert-info"><div class="alert-title"><i class="ti ti-info-circle"></i> Formato requerido del archivo</div><div style="font-size:11px;color:var(--blue);margin-top:4px">Columnas: <strong>codigo, nombre, flota, vehiculo, placa, estado</strong><br>Estado: activo | congelado | desactivado</div></div>
+      <div class="form-field" style="margin-bottom:12px"><label class="form-label">Archivo CSV</label><input type="file" id="padron-file" accept=".csv" onchange="procesarCSV(this)"></div>
+      <div id="padron-preview"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Conductores en padrón</div>
+      <div id="padron-tabla"><div class="loader"><i class="ti ti-loader"></i>Cargando...</div></div>
+    </div>`;
+  const {data:conds}=await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,flotas(nombre)').order('nombre');
+  document.getElementById('padron-tabla').innerHTML=!conds?.length?'<p style="color:var(--gray-400);text-align:center;padding:20px">Sin conductores cargados aún</p>':
+    `<table><thead><tr><th>Código</th><th>Nombre</th><th>Flota</th><th>Vehículo</th><th>Placa</th><th>Estado</th><th></th></tr></thead><tbody>${
+      conds.map(c=>`<tr><td style="font-family:monospace">${c.codigo}</td><td style="font-weight:600">${c.nombre}</td><td><span class="badge badge-info">${c.flotas?.nombre||'—'}</span></td><td style="color:var(--gray-600)">${c.vehiculo||'—'}</td><td>${c.placa||'—'}</td><td><span class="badge ${c.estado==='activo'?'badge-ok':c.estado==='congelado'?'badge-warn':'badge-gray'}">${c.estado}</span></td><td><button class="btn btn-sm btn-danger" onclick="eliminarConductor('${c.codigo}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')
+    }</tbody></table>`;
+  window._flotasData=flotas||[];
+}
+
+async function procesarCSV(input){
+  const file=input.files[0];if(!file)return;
+  const text=await file.text();
+  const lines=text.split('\n').filter(l=>l.trim());
+  const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/['"]/g,''));
+  const rows=lines.slice(1).map(l=>{
+    const vals=l.split(',').map(v=>v.trim().replace(/['"]/g,''));
+    const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||'');return obj;
+  }).filter(r=>r.codigo);
+  document.getElementById('padron-preview').innerHTML=`<div class="alert alert-info"><div class="alert-title"><i class="ti ti-file-check"></i> ${rows.length} conductores detectados</div></div><button class="btn btn-primary" onclick="subirPadron(${JSON.stringify(rows).replace(/"/g,'&quot;')})"><i class="ti ti-upload"></i> Subir ${rows.length} conductores</button>`;
+}
+
+async function subirPadron(rows){
+  const flotas=window._flotasData||[];
+  let ok=0,err=0;
+  for(const r of rows){
+    const flota=flotas.find(f=>f.nombre.toLowerCase()===r.flota?.toLowerCase());
+    const {error}=await sb.from('conductores').upsert({codigo:r.codigo.toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,placa:r.placa||null,flota_id:flota?.id||null,estado:r.estado||'activo',semana_carga:new Date().toISOString().slice(0,10)},{onConflict:'codigo'});
+    error?err++:ok++;
+  }
+  alert(`✅ ${ok} conductores procesados correctamente.${err?` ⚠️ ${err} errores.`:''}`);
+  renderPadron();
+}
+
+async function eliminarConductor(codigo){
+  if(!confirm('¿Eliminar a '+codigo+' del padrón? El historial se conservará.'))return;
+  await sb.from('conductores').update({estado:'desactivado'}).eq('codigo',codigo);
+  renderPadron();
+}
+
+// ══════════════════════════════════════════
+// USUARIOS
+// ══════════════════════════════════════════
+async function renderUsuarios(){
+  const {data}=await sb.from('usuarios').select('*').order('nombre');
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Gestión de usuarios</h2>
+    <div class="card" style="max-width:600px;margin-bottom:14px">
+      <div class="card-title">Crear nuevo usuario</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Nombre completo</label><input type="text" id="nu-nombre" placeholder="Jigsaw Ramos"></div>
+        <div class="form-field"><label class="form-label">Email</label><input type="email" id="nu-email" placeholder="jigsaw@taxidirecto.com"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Rol</label><select id="nu-rol"><option value="inspector">Inspector</option><option value="ejecutivo">Ejecutivo</option><option value="calidad">Calidad</option><option value="admin">Administrador</option></select></div>
+        <div class="form-field"><label class="form-label">Teléfono (SMS alertas)</label><input type="text" id="nu-tel" placeholder="+51 999 888 777"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Contraseña temporal</label><input type="password" id="nu-pass" placeholder="••••••••"></div>
+        <div class="form-field"><label class="form-label">Flotas asignadas</label><select id="nu-flotas"><option value="Aerolíneas,Aeropuerto">Aerolíneas + Aeropuerto</option><option value="Urbana,Plazas">Urbana + Plazas</option><option value="">Todas las flotas</option><option value="lectura">Solo lectura</option></select></div>
+      </div>
+      <button class="btn btn-primary" onclick="crearUsuario()"><i class="ti ti-user-plus"></i> Crear usuario</button>
+      <div id="nu-msg" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Usuarios del sistema</div>
+      ${!data?.length?'<p style="color:var(--gray-400);text-align:center;padding:20px">Sin usuarios registrados aún</p>':
+        `<table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Teléfono</th><th>Flotas</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${
+          data.map(u=>`<tr><td style="font-weight:600">${u.nombre}</td><td style="color:var(--gray-600)">${u.email}</td><td><span class="badge ${u.rol==='admin'?'badge-danger':u.rol==='inspector'?'badge-info':u.rol==='calidad'?'badge-warn':'badge-ok'}">${u.rol}</span></td><td style="font-size:11px;color:var(--gray-600)">${u.telefono||'—'}</td><td style="font-size:11px;color:var(--gray-600)">${u.flotas_asignadas?.join(', ')||'Todas'}</td><td><span class="badge ${u.activo?'badge-ok':'badge-gray'}">${u.activo?'Activo':'Baja'}</span></td><td style="display:flex;gap:5px"><button class="btn btn-sm" onclick="resetPass('${u.email}')"><i class="ti ti-key"></i></button>${u.id!==currentUser?.id?`<button class="btn btn-sm btn-danger" onclick="darBaja('${u.id}','${u.nombre}')"><i class="ti ti-user-off"></i></button>`:''}</td></tr>`).join('')
+        }</tbody></table>`}
+    </div>`;
+}
+
+async function crearUsuario(){
+  const nombre=document.getElementById('nu-nombre').value.trim();
+  const email=document.getElementById('nu-email').value.trim();
+  const pass=document.getElementById('nu-pass').value;
+  const rol=document.getElementById('nu-rol').value;
+  const tel=document.getElementById('nu-tel').value.trim();
+  const flotasVal=document.getElementById('nu-flotas').value;
+  const msg=document.getElementById('nu-msg');
+  if(!nombre||!email||!pass){msg.innerHTML='<span style="color:var(--red);font-size:12px">Completa nombre, email y contraseña</span>';return;}
+  // Crear usuario en Auth
+  const {data,error}=await sb.auth.admin.createUser({email,password:pass,email_confirm:true});
+  if(error){
+    // Método alternativo: signUp
+    const {data:d2,error:e2}=await sb.auth.signUp({email,password:pass});
+    if(e2){msg.innerHTML=`<span style="color:var(--red);font-size:12px">${e2.message}</span>`;return;}
+    // Insertar en tabla usuarios
+    await sb.from('usuarios').insert({id:d2.user.id,nombre,email,rol,telefono:tel||null,flotas_asignadas:flotasVal?flotasVal.split(','):null});
+  } else {
+    await sb.from('usuarios').insert({id:data.user.id,nombre,email,rol,telefono:tel||null,flotas_asignadas:flotasVal?flotasVal.split(','):null});
+  }
+  msg.innerHTML='<div class="alert alert-success"><div class="alert-title">✓ Usuario creado. Debe confirmar su email.</div></div>';
+  setTimeout(()=>renderUsuarios(),2000);
+}
+
+async function resetPass(email){
+  await sb.auth.resetPasswordForEmail(email);
+  alert('✅ Email de reseteo enviado a '+email);
+}
+
+async function darBaja(id,nombre){
+  if(!confirm('¿Dar de baja a '+nombre+'?'))return;
+  await sb.from('usuarios').update({activo:false}).eq('id',id);
+  renderUsuarios();
+}
+
+// ══════════════════════════════════════════
+// INIT — verificar sesión al cargar
+// ══════════════════════════════════════════
+(async()=>{
+  const {data:{session}}=await sb.auth.getSession();
+  if(session){await iniciarApp(session.user);}
+  else{document.getElementById('login-page').style.display='flex';}
+})();
+</script>
+</body>
+</html>
