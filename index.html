@@ -281,7 +281,7 @@ async function loadTab(tab) {
   setActiveNav(tab);
   const c = document.getElementById('main-content');
   c.innerHTML = '<div class="loader"><i class="ti ti-loader"></i>Cargando...</div>';
-  const fns = { dashboard:renderDashboard, inspeccion:renderInspeccion, buscar:renderBuscar, bloqueos:renderBloqueos, compromisos:renderCompromisos, incidencias:renderIncidencias, activos:renderActivos, padron:renderPadron, usuarios:renderUsuarios };
+  const fns = { dashboard:renderDashboard, inspeccion:renderInspeccion, buscar:renderBuscar, bloqueos:renderBloqueos, compromisos:renderCompromisos, incidencias:renderIncidencias, activos:renderActivos, padron:renderPadron, usuarios:renderUsuarios, constructor:renderConstructor };
   if(fns[tab]) await fns[tab]();
   else c.innerHTML = '<div class="loader">Módulo en construcción</div>';
 }
@@ -320,6 +320,14 @@ async function renderDashboard() {
       </div>
       <div id="dash-conductores"><div class="loader"><i class="ti ti-loader"></i>Cargando conductores...</div></div>
     </div>`;
+  // Sección inspector breakdown
+  document.getElementById('main-content').innerHTML += `
+    <div class="card" style="margin-top:0">
+      <div class="card-title">Desempeño por inspector — este mes</div>
+      <div id="dash-inspectores"><div class="loader"><i class="ti ti-loader"></i></div></div>
+    </div>`;
+  renderDashboardInspectores();
+
   // Cargar tabla de conductores
   const { data: conds } = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,flotas(nombre)').neq('estado','desactivado').order('nombre').limit(20);
   if(!conds?.length){ document.getElementById('dash-conductores').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">No hay conductores cargados aún. <button class="btn btn-sm btn-primary" onclick="loadTab(\'padron\')">Cargar padrón</button></p>'; return; }
@@ -421,8 +429,21 @@ async function guardarInspeccion() {
   document.querySelectorAll('[name^="comentario_"]').forEach(el=>{if(el.value)camposEval['comentario_'+el.name.replace('comentario_','')]=el.value;});
   // Activos solicitados
   const activos=[]; document.querySelectorAll('[name="activo"]:checked').forEach(el=>{const subs=[];document.querySelectorAll(`[name="sub_${el.value}"]:checked`).forEach(s=>subs.push(s.value));activos.push({activo:el.value,subpartes:subs});});
-  const {error}=await sb.from('inspecciones').insert({conductor_id:_inspConductorId,usuario_id:currentUser.id,fecha,tipo,mes_referencia:mesRef,observacion_general:obs,activos_solicitados:activos,campos_evaluados:camposEval});
+  const {data:inspData,error}=await sb.from('inspecciones').insert({conductor_id:_inspConductorId,usuario_id:currentUser.id,fecha,tipo,mes_referencia:mesRef,observacion_general:obs,activos_solicitados:activos,campos_evaluados:camposEval}).select().single();
   if(error){alert('Error al guardar: '+error.message);return;}
+  // Registrar cada activo solicitado en solicitudes_activos
+  for(const a of activos){
+    const slaTarget = a.activo==='corbata'||a.activo==='cargador'?2:a.activo==='charging'?4:3;
+    await sb.from('solicitudes_activos').insert({
+      conductor_id:_inspConductorId,
+      inspector_id:currentUser.id,
+      activo:a.activo,
+      subpartes:a.subpartes||[],
+      origen:'inspeccion',
+      sla_target_dias:slaTarget,
+      fecha_paso1:fecha,
+    });
+  }
   document.getElementById('insp-form-body').style.display='none';
   document.getElementById('insp-success').style.display='block';
 }
@@ -567,7 +588,7 @@ async function renderIncidencias(){
   const {data}=await sb.from('incidencias').select('*,conductores(codigo,nombre,flotas(nombre))').order('fecha',{ascending:false});
   document.getElementById('main-content').innerHTML=`
     <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Incidencias</h2>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="loadTab('inspeccion')"><i class="ti ti-plus"></i> Nueva incidencia</button></div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="mostrarFormIncidencia()"><i class="ti ti-plus"></i> Nueva incidencia</button></div><div id="form-incidencia" style="display:none;max-width:600px;margin-bottom:14px"></div>
     <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-inc" placeholder="Buscar por conductor, tipo o descripción..." oninput="filtrarInc()"><span class="search-count" id="cnt-inc">${data?.length||0} registros</span></div>
     <div class="card"><table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Tipo</th><th>Descripción</th><th>Acción tomada</th><th>Fecha</th><th>Estado</th></tr></thead><tbody id="inc-tbody"></tbody></table></div>`;
   window._incData=data||[];
@@ -735,19 +756,26 @@ async function crearUsuario(){
   const flotasVal=document.getElementById('nu-flotas').value;
   const msg=document.getElementById('nu-msg');
   if(!nombre||!email||!pass){msg.innerHTML='<span style="color:var(--red);font-size:12px">Completa nombre, email y contraseña</span>';return;}
-  // Crear usuario en Auth
-  const {data,error}=await sb.auth.admin.createUser({email,password:pass,email_confirm:true});
-  if(error){
-    // Método alternativo: signUp
-    const {data:d2,error:e2}=await sb.auth.signUp({email,password:pass});
-    if(e2){msg.innerHTML=`<span style="color:var(--red);font-size:12px">${e2.message}</span>`;return;}
-    // Insertar en tabla usuarios
-    await sb.from('usuarios').insert({id:d2.user.id,nombre,email,rol,telefono:tel||null,flotas_asignadas:flotasVal?flotasVal.split(','):null});
-  } else {
-    await sb.from('usuarios').insert({id:data.user.id,nombre,email,rol,telefono:tel||null,flotas_asignadas:flotasVal?flotasVal.split(','):null});
+  msg.innerHTML='<span style="color:var(--blue);font-size:12px">Creando usuario...</span>';
+  // Guardar datos pendientes para cuando el usuario confirme
+  const pendingKey = 'pending_user_'+email;
+  localStorage.setItem(pendingKey, JSON.stringify({nombre,email,rol,telefono:tel||null,flotas_asignadas:flotasVal?flotasVal.split(','):null}));
+  const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{nombre,rol}}});
+  if(error){msg.innerHTML=`<div class="alert alert-warn"><div class="alert-title">⚠ ${error.message}</div></div>`;return;}
+  if(data?.user){
+    // Intentar insertar directamente (funciona si email_confirm está desactivado)
+    const {error:e2}=await sb.from('usuarios').insert({id:data.user.id,nombre,email,rol,telefono:tel||null,flotas_asignadas:flotasVal?flotasVal.split(','):null,activo:true});
+    if(!e2){
+      msg.innerHTML='<div class="alert alert-success"><div class="alert-title">✓ Usuario '+nombre+' creado correctamente.</div></div>';
+      document.getElementById('nu-nombre').value='';
+      document.getElementById('nu-email').value='';
+      document.getElementById('nu-pass').value='';
+      setTimeout(()=>renderUsuarios(),1500);
+      return;
+    }
+    // Si falla porque necesita confirmar email, dar instrucciones
+    msg.innerHTML='<div class="alert alert-info"><div class="alert-title">📧 Se envió email de confirmación a '+email+'</div><div style="font-size:11px;color:var(--blue);margin-top:4px">El usuario debe confirmar su email. Luego en Supabase → SQL Editor ejecuta:<br><code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:10px">INSERT INTO usuarios (id,nombre,email,rol,telefono,activo) SELECT id,''+nombre+'',''+email+'',''+rol+'',''+tel+'',true FROM auth.users WHERE email=''+email+'';</code></div></div>';
   }
-  msg.innerHTML='<div class="alert alert-success"><div class="alert-title">✓ Usuario creado. Debe confirmar su email.</div></div>';
-  setTimeout(()=>renderUsuarios(),2000);
 }
 
 async function resetPass(email){
@@ -769,6 +797,142 @@ async function darBaja(id,nombre){
   if(session){await iniciarApp(session.user);}
   else{document.getElementById('login-page').style.display='flex';}
 })();
+</script>
+<script>
+// ══════════════════════════════════════════
+// CONSTRUCTOR DE FORMULARIOS
+// ══════════════════════════════════════════
+async function renderConstructor(){
+  const {data:campos}=await sb.from('formulario_campos').select('*').order('formulario').order('orden');
+  const porForm={inspeccion:[],compromisos:[],incidencias:[],activos:[]};
+  (campos||[]).forEach(c=>{if(porForm[c.formulario])porForm[c.formulario].push(c);});
+  
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Constructor de formularios</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      ${Object.entries(porForm).map(([form,items])=>`
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div class="card-title" style="margin-bottom:0;text-transform:capitalize">${form==='inspeccion'?'Inspección':form==='compromisos'?'Compromisos':form==='incidencias'?'Incidencias':'Activos'}</div>
+            <button class="btn btn-primary btn-sm" onclick="agregarCampo('${form}')"><i class="ti ti-plus"></i> Agregar</button>
+          </div>
+          ${!items.length?'<p style="color:var(--gray-400);font-size:12px">Sin campos configurados</p>':
+            items.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+              <div style="flex:1">
+                <div style="font-size:12px;font-weight:600">${c.nombre}</div>
+                <div style="font-size:10px;color:var(--gray-400)">${c.tipo} · ${c.seccion||'—'} ${c.obligatorio?'· obligatorio':''}</div>
+              </div>
+              <span class="badge ${c.activo?'badge-ok':'badge-gray'}">${c.activo?'Activo':'Inactivo'}</span>
+              <button class="btn btn-sm" onclick="toggleCampo('${c.id}',${!c.activo})"><i class="ti ti-${c.activo?'eye-off':'eye'}"></i></button>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+}
+
+async function agregarCampo(formulario){
+  const nombre=prompt('Nombre del campo:');if(!nombre)return;
+  const tipo=prompt('Tipo (escala/sino/texto/opciones):','sino');if(!tipo)return;
+  const seccion=prompt('Sección:','General');
+  const oblig=confirm('¿Es obligatorio?');
+  const {error}=await sb.from('formulario_campos').insert({formulario,nombre,tipo,seccion,obligatorio:oblig,activo:true,orden:999});
+  if(error){alert('Error: '+error.message);return;}
+  renderConstructor();
+}
+
+async function toggleCampo(id,activo){
+  await sb.from('formulario_campos').update({activo}).eq('id',id);
+  renderConstructor();
+}
+
+// ══════════════════════════════════════════
+// NUEVA INCIDENCIA (formulario correcto)
+// ══════════════════════════════════════════
+async function mostrarFormIncidencia(){
+  const el=document.getElementById('form-incidencia');
+  if(!el)return;
+  el.style.display='block';
+  el.innerHTML=`
+    <div class="card">
+      <div class="card-title">Registrar nueva incidencia</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label><input type="text" id="ni-cod" placeholder="Ej: 205" oninput="buscarCondInc()"></div>
+        <div class="form-field"><label class="form-label">Conductor (auto)</label><input type="text" id="ni-nm" readonly style="background:var(--gray-50)"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Tipo de incidencia</label>
+          <select id="ni-tipo"><option>Vestimenta</option><option>Protocolo</option><option>Conducta</option><option>Vehículo</option><option>Documentación</option><option>Otro</option></select>
+        </div>
+        <div class="form-field"><label class="form-label">Gravedad</label>
+          <select id="ni-grav"><option value="leve">Leve</option><option value="moderada">Moderada</option><option value="grave">Grave</option></select>
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:11px"><label class="form-label">Descripción</label><textarea id="ni-desc" rows="2" placeholder="Describe la incidencia..."></textarea></div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Sanción</label>
+          <select id="ni-sancion"><option value="ninguna">Ninguna</option><option value="suspension">Suspensión</option><option value="bloqueo">Bloqueo</option></select>
+        </div>
+        <div class="form-field"><label class="form-label">Fecha</label><input type="date" id="ni-fecha" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="guardarIncidencia()"><i class="ti ti-check"></i> Registrar incidencia</button>
+        <button class="btn" onclick="document.getElementById('form-incidencia').style.display='none'">Cancelar</button>
+      </div>
+      <div id="ni-ok" class="alert alert-success" style="display:none;margin-top:11px"><div class="alert-title">✓ Incidencia registrada correctamente</div></div>
+    </div>`;
+}
+
+let _niCondId=null;
+async function buscarCondInc(){
+  const v=document.getElementById('ni-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre').eq('codigo',v).single();
+  if(data){_niCondId=data.id;document.getElementById('ni-nm').value=data.nombre;}
+}
+
+async function guardarIncidencia(){
+  if(!_niCondId){alert('Ingresa un código de conductor válido');return;}
+  const tipo=document.getElementById('ni-tipo').value;
+  const desc=document.getElementById('ni-desc').value;
+  const grav=document.getElementById('ni-grav').value;
+  const sancion=document.getElementById('ni-sancion').value;
+  const fecha=document.getElementById('ni-fecha').value;
+  if(!desc){alert('Escribe una descripción');return;}
+  const {error}=await sb.from('incidencias').insert({conductor_id:_niCondId,usuario_id:currentUser.id,tipo,descripcion:desc,gravedad:grav,sancion,fecha,estado:'abierta'});
+  if(error){alert('Error: '+error.message);return;}
+  document.getElementById('ni-ok').style.display='block';
+  _niCondId=null;
+  setTimeout(()=>renderIncidencias(),1500);
+}
+
+// ══════════════════════════════════════════
+// DASHBOARD CON DESGLOSE POR INSPECTOR
+// ══════════════════════════════════════════
+async function renderDashboardInspectores(){
+  const mesActual=new Date().toISOString().slice(0,7);
+  const {data:insp}=await sb.from('inspecciones').select('usuario_id,usuarios(nombre,flotas_asignadas)').eq('mes_referencia',mesActual);
+  if(!insp?.length){
+    document.getElementById('dash-inspectores').innerHTML='<p style="color:var(--gray-400);font-size:12px;text-align:center;padding:16px">Sin inspecciones registradas este mes</p>';
+    return;
+  }
+  const porInsp={};
+  insp.forEach(i=>{
+    const nm=i.usuarios?.nombre||'Desconocido';
+    const flotas=i.usuarios?.flotas_asignadas||[];
+    if(!porInsp[nm])porInsp[nm]={count:0,flotas};
+    porInsp[nm].count++;
+  });
+  document.getElementById('dash-inspectores').innerHTML=Object.entries(porInsp).map(([nm,data])=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+      <div>
+        <div style="font-size:13px;font-weight:600">${nm}</div>
+        <div style="font-size:11px;color:var(--gray-400);margin-top:2px">${data.flotas.length?data.flotas.join(' · '):'Todas las flotas'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:700;color:var(--blue)">${data.count}</div>
+        <div style="font-size:10px;color:var(--gray-400)">inspecciones</div>
+      </div>
+    </div>`).join('');
+}
 </script>
 </body>
 </html>
