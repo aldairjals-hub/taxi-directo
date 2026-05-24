@@ -2172,25 +2172,48 @@ async function renderConstructor(){
             <button class="btn btn-primary btn-sm" onclick="agregarCampo('${form}')"><i class="ti ti-plus"></i> Agregar</button>
           </div>
           ${!items.length?'<p style="color:var(--gray-400);font-size:12px;text-align:center;padding:12px">Sin campos configurados</p>':
-            items.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--gray-100)">
-              <div style="flex:1">
-                <div style="font-size:12px;font-weight:600">${c.nombre}</div>
-                <div style="font-size:10px;color:var(--gray-400)">${c.tipo} · ${c.seccion||'—'} ${c.obligatorio?'· obligatorio':''}</div>
+            items.map(c=>`<div style="padding:9px 0;border-bottom:1px solid var(--gray-100)">
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1">
+                  <div style="font-size:12px;font-weight:600">${c.nombre} ${c.obligatorio?'<span style="color:var(--red);font-size:10px">*</span>':''}</div>
+                  <div style="font-size:10px;color:var(--gray-400)">${c.tipo} · ${c.seccion||'—'}</div>
+                  ${c.tipo==='opciones'&&c.opciones?.length?`<div style="font-size:10px;color:var(--blue);margin-top:2px">Opciones: ${c.opciones.join(' · ')}</div>`:''}
+                </div>
+                <span class="badge ${c.activo?'badge-ok':'badge-gray'}">${c.activo?'Activo':'Inactivo'}</span>
+                ${c.tipo==='opciones'?`<button class="btn btn-sm" onclick="editarOpciones('${c.id}',${JSON.stringify(c.opciones||[])})" title="Editar opciones"><i class="ti ti-list"></i></button>`:''}
+                <button class="btn btn-sm" onclick="toggleCampo('${c.id}',${!c.activo})" title="${c.activo?'Desactivar':'Activar'}"><i class="ti ti-${c.activo?'eye-off':'eye'}"></i></button>
               </div>
-              <span class="badge ${c.activo?'badge-ok':'badge-gray'}">${c.activo?'Activo':'Inactivo'}</span>
-              <button class="btn btn-sm" onclick="toggleCampo('${c.id}',${!c.activo})" title="${c.activo?'Desactivar':'Activar'}"><i class="ti ti-${c.activo?'eye-off':'eye'}"></i></button>
             </div>`).join('')}
         </div>`).join('')}
     </div>`;
 }
 async function agregarCampo(formulario){
   const nombre=prompt('Nombre del campo:');if(!nombre)return;
-  const tipo=prompt('Tipo:\n1=escala (1-5)\n2=sino (Sí/No)\n3=texto libre\n4=opciones','2');
+  const tipoNum=prompt('Tipo de campo:\n1 = Escala visual 1-5\n2 = Sí / No\n3 = Texto libre\n4 = Lista de opciones','2');
   const tipoMap={'1':'escala','2':'sino','3':'texto','4':'opciones'};
-  const tipoFinal=tipoMap[tipo]||'sino';
+  const tipoFinal=tipoMap[tipoNum]||'sino';
   const seccion=prompt('Sección (Ej: Vehículo, Conductor, Documentos):','General');
   const oblig=confirm('¿Es obligatorio?');
-  await sb.from('formulario_campos').insert({formulario,nombre,tipo:tipoFinal,seccion,obligatorio:oblig,activo:true,orden:999});
+  let opciones=null;
+  if(tipoFinal==='opciones'){
+    const optsStr=prompt('Escribe las opciones separadas por coma:\nEjemplo: Opción A, Opción B, Opción C');
+    if(optsStr)opciones=optsStr.split(',').map(o=>o.trim()).filter(Boolean);
+  }
+  const {error}=await sb.from('formulario_campos').insert({
+    formulario,nombre,tipo:tipoFinal,
+    opciones:opciones||null,
+    seccion,obligatorio:oblig,activo:true,orden:999
+  });
+  if(error){alert('Error: '+error.message);return;}
+  alert('✓ Campo "'+nombre+'" agregado correctamente');
+  renderConstructor();
+}
+async function editarOpciones(id,opcionesActuales){
+  const actual=(opcionesActuales||[]).join(', ');
+  const nuevo=prompt('Edita las opciones separadas por coma:\n(Actual: '+actual+')',actual);
+  if(nuevo===null)return;
+  const opciones=nuevo.split(',').map(o=>o.trim()).filter(Boolean);
+  await sb.from('formulario_campos').update({opciones}).eq('id',id);
   renderConstructor();
 }
 async function toggleCampo(id,activo){
@@ -2831,6 +2854,7 @@ async function subirPadronConVerificacion(rows){
   renderPadron();
 }
 </script>
+<script>
 </body>`);
   w.document.close();
   setTimeout(()=>w.print(),500);
@@ -2863,6 +2887,7 @@ async function renderDashboardInspectores(){
       </div>
     </div>`).join('');
 }
+</script>
 </script>
 <script>
 // ══════════════════════════════════════════
