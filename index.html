@@ -344,6 +344,23 @@ async function renderDashboard() {
     }
     renderDashboardInspectores();
   },100);
+  // Inspector y flota breakdown cards - añadir al main-content
+  const mc=document.getElementById('main-content');
+  
+  // Card desglose por inspector
+  const divInsp=document.createElement('div');
+  divInsp.className='card';
+  divInsp.style.marginBottom='14px';
+  divInsp.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div class="card-title" style="margin-bottom:0">Desempeño por inspector</div><span style="font-size:11px;color:var(--gray-400)">inspecciones este mes</span></div><div id="dash-inspectores"><div class="loader"><i class="ti ti-loader"></i></div></div>';
+  mc.appendChild(divInsp);
+  
+  // Card avance por flota
+  const divFlota=document.createElement('div');
+  divFlota.className='card';
+  divFlota.style.marginBottom='14px';
+  divFlota.innerHTML='<div class="card-title">Avance por flota</div><div id="dash-flotas"><div class="loader"><i class="ti ti-loader"></i></div></div>';
+  mc.appendChild(divFlota);
+
   // Cargar tabla de conductores
   const { data: conds } = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,flotas(nombre)').neq('estado','desactivado').order('nombre').limit(20);
   if(!conds?.length){ document.getElementById('dash-conductores').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">No hay conductores cargados aún. <button class="btn btn-sm btn-primary" onclick="loadTab(\'padron\')">Cargar padrón</button></p>'; return; }
@@ -621,9 +638,9 @@ async function verHistorial(id) {
   ]);
   document.getElementById('bus-inp').value=cond.nombre;
   const histItems=[
-    ...(insp||[]).map(i=>({tipo:'insp',titulo:`Inspección ${i.tipo==='subsanacion'?'— Subsanación':''} ${i.mes_referencia}`,detalle:`Evaluador: ${i.usuarios?.nombre||'—'}`,fecha:i.fecha,sub:i.tipo==='subsanacion'})),
-    ...(inc||[]).map(i=>({tipo:'inc',titulo:`Incidencia: ${i.tipo}`,detalle:i.descripcion,fecha:i.fecha})),
-    ...(comp||[]).map(c=>({tipo:'comp',titulo:c.titulo,detalle:`Plazo: ${c.fecha_limite||'—'}`,fecha:c.created_at?.slice(0,10),res:c.estado==='resuelto'})),
+    ...(insp||[]).map(i=>({tipo:'insp',id:i.id,titulo:'Inspección '+(i.tipo==='subsanacion'?'— Subsanación ':'')+i.mes_referencia,detalle:'Evaluador: '+(i.usuarios?.nombre||'—'),fecha:i.fecha,sub:i.tipo==='subsanacion'})),
+    ...(inc||[]).map(i=>({tipo:'inc',titulo:'Incidencia: '+i.tipo,detalle:i.descripcion,fecha:i.fecha})),
+    ...(comp||[]).map(c=>({tipo:'comp',titulo:c.titulo,detalle:'Plazo: '+(c.fecha_limite||'—'),fecha:c.created_at?.slice(0,10),res:c.estado==='resuelto'})),
   ].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
 
   // Guardar inspecciones para ver detalle
@@ -653,8 +670,8 @@ async function verHistorial(id) {
               <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${h.fecha||'—'}</div>
             </div>
             ${h.tipo==='insp'?`<div style="display:flex;gap:4px;align-items:center">
-              <button class="btn btn-sm" onclick="verDetalleInsp(${hi})"><i class="ti ti-eye"></i> Ver</button>
-              <button class="btn btn-sm" onclick="generarPDF(${hi})"><i class="ti ti-file-description"></i> PDF</button>
+              <button class="btn btn-sm" onclick="verDetalleInspById('${h.id}')"><i class="ti ti-eye"></i> Ver</button>
+              <button class="btn btn-sm" onclick="generarPDFById('${h.id}')"><i class="ti ti-file-description"></i> PDF</button>
             </div>`:''}
           </div>`;}).join('')}
     </div>
@@ -1044,8 +1061,16 @@ async function toggleCampo(id,activo){
 // NUEVA INCIDENCIA (formulario correcto)
 // ══════════════════════════════════════════
 async function mostrarFormIncidencia(){
-  const el=document.getElementById('form-incidencia');
-  if(!el)return;
+  let el=document.getElementById('form-incidencia');
+  if(!el){
+    const modal=document.createElement('div');
+    modal.id='form-incidencia-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px';
+    modal.onclick=function(e){if(e.target===modal)modal.remove();};
+    document.body.appendChild(modal);
+    modal.innerHTML='<div id="form-incidencia" style="background:#fff;border-radius:13px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:20px"></div>';
+    el=document.getElementById('form-incidencia');
+  }
   el.style.display='block';
   el.innerHTML=`
     <div class="card">
@@ -1303,6 +1328,23 @@ async function renderDashboard() {
     }
     renderDashboardInspectores();
   },100);
+  // Inspector y flota breakdown cards - añadir al main-content
+  const mc=document.getElementById('main-content');
+  
+  // Card desglose por inspector
+  const divInsp=document.createElement('div');
+  divInsp.className='card';
+  divInsp.style.marginBottom='14px';
+  divInsp.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div class="card-title" style="margin-bottom:0">Desempeño por inspector</div><span style="font-size:11px;color:var(--gray-400)">inspecciones este mes</span></div><div id="dash-inspectores"><div class="loader"><i class="ti ti-loader"></i></div></div>';
+  mc.appendChild(divInsp);
+  
+  // Card avance por flota
+  const divFlota=document.createElement('div');
+  divFlota.className='card';
+  divFlota.style.marginBottom='14px';
+  divFlota.innerHTML='<div class="card-title">Avance por flota</div><div id="dash-flotas"><div class="loader"><i class="ti ti-loader"></i></div></div>';
+  mc.appendChild(divFlota);
+
   // Cargar tabla de conductores
   const { data: conds } = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,flotas(nombre)').neq('estado','desactivado').order('nombre').limit(20);
   if(!conds?.length){ document.getElementById('dash-conductores').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">No hay conductores cargados aún. <button class="btn btn-sm btn-primary" onclick="loadTab(\'padron\')">Cargar padrón</button></p>'; return; }
@@ -1580,9 +1622,9 @@ async function verHistorial(id) {
   ]);
   document.getElementById('bus-inp').value=cond.nombre;
   const histItems=[
-    ...(insp||[]).map(i=>({tipo:'insp',titulo:`Inspección ${i.tipo==='subsanacion'?'— Subsanación':''} ${i.mes_referencia}`,detalle:`Evaluador: ${i.usuarios?.nombre||'—'}`,fecha:i.fecha,sub:i.tipo==='subsanacion'})),
-    ...(inc||[]).map(i=>({tipo:'inc',titulo:`Incidencia: ${i.tipo}`,detalle:i.descripcion,fecha:i.fecha})),
-    ...(comp||[]).map(c=>({tipo:'comp',titulo:c.titulo,detalle:`Plazo: ${c.fecha_limite||'—'}`,fecha:c.created_at?.slice(0,10),res:c.estado==='resuelto'})),
+    ...(insp||[]).map(i=>({tipo:'insp',id:i.id,titulo:'Inspección '+(i.tipo==='subsanacion'?'— Subsanación ':'')+i.mes_referencia,detalle:'Evaluador: '+(i.usuarios?.nombre||'—'),fecha:i.fecha,sub:i.tipo==='subsanacion'})),
+    ...(inc||[]).map(i=>({tipo:'inc',titulo:'Incidencia: '+i.tipo,detalle:i.descripcion,fecha:i.fecha})),
+    ...(comp||[]).map(c=>({tipo:'comp',titulo:c.titulo,detalle:'Plazo: '+(c.fecha_limite||'—'),fecha:c.created_at?.slice(0,10),res:c.estado==='resuelto'})),
   ].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
 
   // Guardar inspecciones para ver detalle
@@ -1612,8 +1654,8 @@ async function verHistorial(id) {
               <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${h.fecha||'—'}</div>
             </div>
             ${h.tipo==='insp'?`<div style="display:flex;gap:4px;align-items:center">
-              <button class="btn btn-sm" onclick="verDetalleInsp(${hi})"><i class="ti ti-eye"></i> Ver</button>
-              <button class="btn btn-sm" onclick="generarPDF(${hi})"><i class="ti ti-file-description"></i> PDF</button>
+              <button class="btn btn-sm" onclick="verDetalleInspById('${h.id}')"><i class="ti ti-eye"></i> Ver</button>
+              <button class="btn btn-sm" onclick="generarPDFById('${h.id}')"><i class="ti ti-file-description"></i> PDF</button>
             </div>`:''}
           </div>`;}).join('')}
     </div>
@@ -1995,8 +2037,16 @@ async function toggleCampo(id,activo){
 // NUEVA INCIDENCIA (formulario correcto)
 // ══════════════════════════════════════════
 async function mostrarFormIncidencia(){
-  const el=document.getElementById('form-incidencia');
-  if(!el)return;
+  let el=document.getElementById('form-incidencia');
+  if(!el){
+    const modal=document.createElement('div');
+    modal.id='form-incidencia-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px';
+    modal.onclick=function(e){if(e.target===modal)modal.remove();};
+    document.body.appendChild(modal);
+    modal.innerHTML='<div id="form-incidencia" style="background:#fff;border-radius:13px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:20px"></div>';
+    el=document.getElementById('form-incidencia');
+  }
   el.style.display='block';
   el.innerHTML=`
     <div class="card">
@@ -2466,7 +2516,7 @@ async function renderActivos(){
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div style="font-size:13px;font-weight:700">Solicitudes — flujo de 4 pasos</div>
-        <button class="btn btn-sm"><i class="ti ti-download"></i> Exportar</button>
+        <button class="btn btn-sm" onclick="exportarActivos()"><i class="ti ti-download"></i> Exportar CSV</button>
       </div>
       <div id="activos-list"></div>
     </div>`;
@@ -2600,8 +2650,16 @@ async function guardarPasosActivo(id){
 }
 
 async function mostrarFormActivo(){
-  const el=document.getElementById('form-activo');
-  if(!el)return;
+  let el=document.getElementById('form-activo');
+  if(!el){
+    const modal=document.createElement('div');
+    modal.id='form-activo-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px';
+    modal.onclick=function(e){if(e.target===modal)modal.remove();};
+    document.body.appendChild(modal);
+    modal.innerHTML='<div id="form-activo" style="background:#fff;border-radius:13px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:20px"></div>';
+    el=document.getElementById('form-activo');
+  }
   el.style.display='block';
   el.innerHTML=`
     <div class="card" style="border-color:var(--blue)">
@@ -2872,6 +2930,151 @@ function exportarFiltro(){
   a.href=url;a.download='padron_taxi_directo_'+new Date().toISOString().slice(0,10)+'.csv';
   a.click();URL.revokeObjectURL(url);
 }
+
+
+async function verDetalleInspById(inspId){
+  // Fetch inspection details from Supabase
+  const {data:i}=await sb.from('inspecciones')
+    .select('*,usuarios(nombre),conductores(nombre,codigo,placa,vehiculo,flotas(nombre))')
+    .eq('id',inspId).single();
+  if(!i){alert('No se encontró la inspección');return;}
+  
+  const campos=i.campos_evaluados||{};
+  const activos=i.activos_solicitados||[];
+  
+  // Show as modal
+  const existing=document.getElementById('detalle-insp-modal');
+  if(existing)existing.remove();
+  
+  const modal=document.createElement('div');
+  modal.id='detalle-insp-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:300;padding:20px';
+  modal.onclick=function(e){if(e.target===modal)modal.remove();};
+  
+  const camposHtml=Object.entries(campos)
+    .filter(([k])=>!k.startsWith('comentario_'))
+    .map(([k,v])=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--gray-100);font-size:12px"><span style="color:var(--gray-600)">'+k+'</span><strong>'+( Array.isArray(v)?v.join(', '):v)+'</strong></div>')
+    .join('');
+  
+  const scoreVal=i.score_experiencia;
+  const scoreColor=scoreVal>=80?'var(--green)':scoreVal>=60?'var(--amber)':'var(--red)';
+  
+  modal.innerHTML='<div style="background:#fff;border-radius:13px;width:100%;max-width:600px;max-height:92vh;overflow-y:auto;padding:20px">'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
+      '<div><div style="font-size:15px;font-weight:700">Detalle de inspección</div><div style="font-size:11px;color:var(--gray-400);margin-top:2px">'+i.conductores?.nombre+' · '+i.fecha+'</div></div>'+
+      '<div style="display:flex;gap:7px">'+
+        '<button onclick="generarPDFData(''+inspId+'')" style="padding:6px 12px;background:var(--blue);color:#fff;border:none;border-radius:7px;font-size:11px;cursor:pointer;font-family:inherit"><i class="ti ti-file-description"></i> PDF</button>'+
+        '<button onclick="document.getElementById('detalle-insp-modal').remove()" style="padding:6px 12px;background:var(--gray-100);color:var(--gray-800);border:none;border-radius:7px;font-size:11px;cursor:pointer;font-family:inherit">✕ Cerrar</button>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:11px;background:var(--gray-50);border-radius:8px;margin-bottom:14px">'+
+      '<div><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Tipo</div><div style="font-size:12px;font-weight:600;margin-top:2px">'+(i.tipo==='subsanacion'?'Subsanación':'Mensual')+'</div></div>'+
+      '<div><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Inspector</div><div style="font-size:12px;font-weight:600;margin-top:2px">'+(i.usuarios?.nombre||'—')+'</div></div>'+
+      (scoreVal?'<div style="text-align:center"><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Score experiencia</div><div style="font-size:22px;font-weight:700;color:'+scoreColor+';margin-top:2px">'+scoreVal+'%</div></div>':'<div></div>')+
+    '</div>'+
+    (i.alerta_categoria&&i.categoria_sugerida?'<div style="background:var(--amber-bg);border:1.5px solid #FCD34D;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--amber)">⚠ Inspector sugirió cambio de categoría a: <strong>'+i.categoria_sugerida+'</strong></div>':'')+
+    '<div style="font-size:11px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Campos evaluados</div>'+
+    (camposHtml||'<p style="color:var(--gray-400);font-size:12px">Sin campos registrados</p>')+
+    (activos.length?'<div style="font-size:11px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">Activos solicitados</div>'+activos.map(a=>'<div style="padding:4px 0;font-size:12px;color:var(--red)">• '+(a.activo||a)+(Array.isArray(a.subpartes)&&a.subpartes.length?' ('+a.subpartes.join(', ')+')':'')+'</div>').join(''):'')+ 
+    (i.observacion_general?'<div style="margin-top:10px;padding:9px;background:var(--gray-50);border-radius:7px;font-size:11px;color:var(--gray-600)"><strong>Observación:</strong> '+i.observacion_general+'</div>':'')+
+  '</div>';
+  
+  document.body.appendChild(modal);
+  window._currentInspData=i;
+}
+
+async function generarPDFById(inspId){
+  const {data:i}=await sb.from('inspecciones')
+    .select('*,usuarios(nombre),conductores(nombre,codigo,placa,vehiculo,flotas(nombre))')
+    .eq('id',inspId).single();
+  if(!i)return;
+  window._currentInspData=i;
+  generarPDFData(inspId);
+}
+
+function generarPDFData(inspId){
+  const i=window._currentInspData;
+  if(!i)return;
+  const cond=i.conductores;
+  const campos=i.campos_evaluados||{};
+  const activos=i.activos_solicitados||[];
+  const scoreVal=i.score_experiencia;
+  const scoreColor=scoreVal>=80?'#0F6E56':scoreVal>=60?'#92400E':'#B91C1C';
+  
+  const w=window.open('','_blank','width=800,height=900');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Inspección TD — '+cond?.nombre+'</title>'+
+  '<style>'+
+    'body{font-family:Arial,sans-serif;padding:30px;color:#1E293B;font-size:12px}'+
+    'h1{color:#1A56DB;font-size:20px;margin-bottom:4px}'+
+    '.sub{color:#94A3B8;font-size:11px;margin-bottom:20px}'+
+    '.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1A56DB;padding-bottom:12px;margin-bottom:16px}'+
+    '.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;background:#F8FAFC;padding:12px;border-radius:8px;margin-bottom:16px}'+
+    '.lbl{font-size:9px;font-weight:700;color:#94A3B8;text-transform:uppercase;margin-bottom:3px}'+
+    '.val{font-size:12px;font-weight:600}'+
+    '.score-box{text-align:center;padding:10px;border:2px solid '+scoreColor+';border-radius:8px}'+
+    '.score-val{font-size:28px;font-weight:700;color:'+scoreColor+'}'+
+    'table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px}'+
+    'th{background:#F1F5F9;padding:6px 10px;text-align:left;font-size:9px;color:#94A3B8;text-transform:uppercase}'+
+    'td{padding:6px 10px;border-bottom:1px solid #F1F5F9}'+
+    '.section-title{font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #E2E8F0}'+
+    '.footer{border-top:1px solid #E2E8F0;padding-top:10px;font-size:9px;color:#94A3B8;display:flex;justify-content:space-between;margin-top:20px}'+
+    '@media print{button{display:none}}'+
+  '</style></head><body>'+
+  '<div class="header">'+
+    '<div><h1>Taxi Directo</h1><div class="sub">Reporte de Inspección Vehicular</div></div>'+
+    '<div style="text-align:right;font-size:11px;color:#94A3B8">Fecha: <strong style="color:#1E293B">'+i.fecha+'</strong><br>Tipo: <strong style="color:#1E293B">'+(i.tipo==='subsanacion'?'Subsanación':'Inspección mensual')+'</strong></div>'+
+  '</div>'+
+  '<div class="grid">'+
+    '<div><div class="lbl">Conductor</div><div class="val">'+(cond?.nombre||'—')+'</div></div>'+
+    '<div><div class="lbl">Código · Placa</div><div class="val">'+(cond?.codigo||'—')+' · '+(cond?.placa||'—')+'</div></div>'+
+    '<div><div class="lbl">Vehículo</div><div class="val">'+(cond?.vehiculo||'—')+'</div></div>'+
+    '<div><div class="lbl">Flota</div><div class="val">'+(cond?.flotas?.nombre||'—')+'</div></div>'+
+    '<div><div class="lbl">Inspector</div><div class="val">'+(i.usuarios?.nombre||'—')+'</div></div>'+
+    (scoreVal?'<div class="score-box"><div class="lbl">Score experiencia</div><div class="score-val">'+scoreVal+'%</div></div>':'<div></div>')+
+  '</div>'+
+  (i.alerta_categoria?'<div style="background:#FEF3C7;border:1px solid #FCD34D;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:11px;color:#92400E">⚠ Inspector sugirió cambio de categoría a: <strong>'+i.categoria_sugerida+'</strong></div>':'')+
+  '<div class="section-title">Evaluación del vehículo y conductor</div>'+
+  '<table><thead><tr><th>Campo evaluado</th><th>Resultado</th></tr></thead><tbody>'+
+  Object.entries(campos).filter(([k])=>!k.startsWith('comentario_')).map(([k,v])=>'<tr><td>'+k+'</td><td><strong>'+(Array.isArray(v)?v.join(', '):v)+'</strong></td></tr>').join('')+
+  '</tbody></table>'+
+  (activos.length?'<div class="section-title">Activos solicitados</div>'+activos.map(a=>'<div style="padding:3px 0;color:#B91C1C">• '+(a.activo||a)+(Array.isArray(a.subpartes)&&a.subpartes.length?' ('+a.subpartes.join(', ')+')':'')+'</div>').join(''):'')+ 
+  (i.observacion_general?'<div style="background:#F8FAFC;padding:10px;border-radius:6px;margin-top:12px;font-size:11px"><strong>Observación general:</strong> '+i.observacion_general+'</div>':'')+
+  '<div class="footer"><span>Taxi Directo · Sistema de Gestión de Flota · Confidencial</span><span>Generado: '+new Date().toLocaleString('es-PE')+'</span></div>'+
+  '<br><button onclick="window.print()" style="padding:8px 16px;background:#1A56DB;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Guardar PDF</button>'+
+  '</body></html>');
+  w.document.close();
+}
+
+async function exportarActivos(){
+  const {data}=await sb.from('solicitudes_activos')
+    .select('*,conductores(codigo,nombre,flotas(nombre)),usuarios(nombre)')
+    .order('created_at',{ascending:false});
+  if(!data?.length){alert('Sin datos para exportar');return;}
+  const headers='conductor,codigo,flota,activo,subpartes,inspector,fecha_solicitud,fecha_entrega,dias_sla,estado';
+  const rows=(data||[]).map(a=>{
+    const entregado=!!a.fecha_paso4;
+    const dias=a.dias_sla??Math.round((new Date()-new Date(a.created_at))/(1000*60*60*24));
+    return [
+      a.conductores?.nombre||'',
+      a.conductores?.codigo||'',
+      a.conductores?.flotas?.nombre||'',
+      a.activo||'',
+      Array.isArray(a.subpartes)?a.subpartes.join('|'):a.subpartes||'',
+      a.usuarios?.nombre||'',
+      a.fecha_paso1||'',
+      a.fecha_paso4||'',
+      dias,
+      entregado?'Entregado':'Pendiente'
+    ].join(',');
+  });
+  const csv=headers+'\n'+rows.join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='activos_taxi_directo_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();URL.revokeObjectURL(url);
+}
+
 </script>
 </body>
 
@@ -2953,8 +3156,17 @@ function irACompromiso(){
 }
 
 async function mostrarFormCompromiso(desdeinsp=false){
-  const el=document.getElementById('form-compromiso');
-  if(!el)return;
+  let el=document.getElementById('form-compromiso');
+  if(!el){
+    // Create modal overlay
+    el=document.createElement('div');
+    el.id='form-compromiso-modal';
+    el.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px';
+    el.onclick=function(e){if(e.target===el)el.remove();};
+    document.body.appendChild(el);
+    el.innerHTML='<div id="form-compromiso" style="background:#fff;border-radius:13px;width:100%;max-width:540px;max-height:92vh;overflow-y:auto"></div>';
+    el=document.getElementById('form-compromiso');
+  }
   el.style.display='block';
   el.innerHTML=`
     <div class="card" style="border-color:var(--blue)">
@@ -3046,8 +3258,16 @@ async function guardarCompromiso(){
 // NUEVA INCIDENCIA
 // ══════════════════════════════════════════
 async function mostrarFormIncidencia(){
-  const el=document.getElementById('form-incidencia');
-  if(!el)return;
+  let el=document.getElementById('form-incidencia');
+  if(!el){
+    const modal=document.createElement('div');
+    modal.id='form-incidencia-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px';
+    modal.onclick=function(e){if(e.target===modal)modal.remove();};
+    document.body.appendChild(modal);
+    modal.innerHTML='<div id="form-incidencia" style="background:#fff;border-radius:13px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:20px"></div>';
+    el=document.getElementById('form-incidencia');
+  }
   el.style.display='block';
   el.innerHTML=`
     <div class="card" style="border-color:var(--amber)">
@@ -3119,8 +3339,16 @@ async function guardarIncidencia(){
 // FORMULARIO NUEVA SUSPENSIÓN POR INCIDENCIA
 // ══════════════════════════════════════════
 async function mostrarFormBloqueo(){
-  const el=document.getElementById('form-bloqueo');
-  if(!el)return;
+  let el=document.getElementById('form-bloqueo');
+  if(!el){
+    const modal=document.createElement('div');
+    modal.id='form-bloqueo-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px';
+    modal.onclick=function(e){if(e.target===modal)modal.remove();};
+    document.body.appendChild(modal);
+    modal.innerHTML='<div id="form-bloqueo" style="background:#fff;border-radius:13px;width:100%;max-width:540px;max-height:92vh;overflow-y:auto"></div>';
+    el=document.getElementById('form-bloqueo');
+  }
   el.style.display='block';
   const hoy=new Date();
   el.innerHTML=`
@@ -3192,7 +3420,10 @@ async function guardarBloqueoInc(){
   });
   document.getElementById('nb-ok').style.display='block';
   _blqCondId=null;
-  setTimeout(()=>renderBloqueos(),1500);
+  setTimeout(()=>{
+    document.getElementById('form-bloqueo-modal')?.remove();
+    renderBloqueos();
+  },1500);
 }
 
 // ══════════════════════════════════════════
@@ -3795,8 +4026,16 @@ async function guardarPasosActivo(id){
 }
 
 async function mostrarFormActivo(){
-  const el=document.getElementById('form-activo');
-  if(!el)return;
+  let el=document.getElementById('form-activo');
+  if(!el){
+    const modal=document.createElement('div');
+    modal.id='form-activo-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px';
+    modal.onclick=function(e){if(e.target===modal)modal.remove();};
+    document.body.appendChild(modal);
+    modal.innerHTML='<div id="form-activo" style="background:#fff;border-radius:13px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:20px"></div>';
+    el=document.getElementById('form-activo');
+  }
   el.style.display='block';
   el.innerHTML=`
     <div class="card" style="border-color:var(--blue)">
@@ -4078,27 +4317,71 @@ function exportarFiltro(){
 // ══════════════════════════════════════════
 async function renderDashboardInspectores(){
   const mesActual=new Date().toISOString().slice(0,7);
-  const {data:insp}=await sb.from('inspecciones').select('usuario_id,usuarios(nombre,flotas_asignadas)').eq('mes_referencia',mesActual);
-  const el=document.getElementById('dash-inspectores');
-  if(!el)return;
-  if(!insp?.length){el.innerHTML='<p style="color:var(--gray-400);font-size:12px;text-align:center;padding:16px">Sin inspecciones registradas este mes</p>';return;}
-  const porInsp={};
-  insp.forEach(i=>{
-    const nm=i.usuarios?.nombre||'Desconocido';
-    if(!porInsp[nm])porInsp[nm]={count:0,flotas:i.usuarios?.flotas_asignadas||[]};
-    porInsp[nm].count++;
-  });
-  el.innerHTML=Object.entries(porInsp).sort((a,b)=>b[1].count-a[1].count).map(([nm,d])=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)">
-      <div>
-        <div style="font-size:13px;font-weight:600">${nm}</div>
-        <div style="font-size:11px;color:var(--gray-400);margin-top:2px">${d.flotas.length?d.flotas.join(' · '):'Todas las flotas'}</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:20px;font-weight:700;color:var(--blue)">${d.count}</div>
-        <div style="font-size:10px;color:var(--gray-400)">inspecciones</div>
-      </div>
-    </div>`).join('');
+  const {data:insp}=await sb.from('inspecciones').select('conductor_id,usuario_id,usuarios(nombre,flotas_asignadas)').eq('mes_referencia',mesActual);
+  const {data:totalConds}=await sb.from('conductores').select('id,flotas(nombre)',{count:'exact'}).neq('estado','desactivado');
+  
+  // Desglose por inspector
+  const elInsp=document.getElementById('dash-inspectores');
+  if(elInsp){
+    if(!insp?.length){
+      elInsp.innerHTML='<p style="color:var(--gray-400);font-size:12px;text-align:center;padding:16px">Sin inspecciones registradas este mes</p>';
+    } else {
+      const porInsp={};
+      insp.forEach(i=>{
+        const nm=i.usuarios?.nombre||'—';
+        const flotas=i.usuarios?.flotas_asignadas||[];
+        if(!porInsp[nm])porInsp[nm]={count:0,flotas};
+        porInsp[nm].count++;
+      });
+      const total=insp.length;
+      elInsp.innerHTML=Object.entries(porInsp).sort((a,b)=>b[1].count-a[1].count).map(([nm,d])=>{
+        const pct=Math.round(d.count/Math.max(total,1)*100);
+        return '<div style="margin-bottom:12px">'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
+            '<div>'+
+              '<div style="font-size:13px;font-weight:600">'+nm+'</div>'+
+              '<div style="font-size:10px;color:var(--gray-400);margin-top:1px">'+(d.flotas.length?d.flotas.join(' · '):'Todas las flotas')+'</div>'+
+            '</div>'+
+            '<div style="text-align:right">'+
+              '<div style="font-size:20px;font-weight:700;color:var(--blue)">'+d.count+'</div>'+
+              '<div style="font-size:10px;color:var(--gray-400)">inspecciones</div>'+
+            '</div>'+
+          '</div>'+
+          '<div style="height:7px;background:var(--gray-100);border-radius:3px;overflow:hidden">'+
+            '<div style="width:'+pct+'%;height:100%;background:var(--blue);border-radius:3px"></div>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+    }
+  }
+  
+  // Desglose por flota
+  const elFlota=document.getElementById('dash-flotas');
+  if(elFlota&&insp?.length){
+    const inspIds=new Set(insp.map(i=>i.conductor_id));
+    const porFlota={};
+    (totalConds||[]).forEach(c=>{
+      const fl=c.flotas?.nombre||'Sin flota';
+      if(!porFlota[fl])porFlota[fl]={total:0,insp:0};
+      porFlota[fl].total++;
+      if(inspIds.has(c.id))porFlota[fl].insp++;
+    });
+    elFlota.innerHTML=Object.entries(porFlota).sort((a,b)=>b[1].total-a[1].total).map(([fl,d])=>{
+      const pct=Math.round(d.insp/Math.max(d.total,1)*100);
+      const col=pct>=80?'#22C55E':pct>=50?'#F59E0B':'#EF4444';
+      return '<div style="margin-bottom:12px">'+
+        '<div style="display:flex;justify-content:space-between;margin-bottom:4px">'+
+          '<span style="font-size:12px;font-weight:600">'+fl+'</span>'+
+          '<span style="font-size:11px;font-weight:700;color:'+col+'">'+d.insp+'/'+d.total+' · '+pct+'%</span>'+
+        '</div>'+
+        '<div style="height:8px;background:var(--gray-100);border-radius:4px;overflow:hidden">'+
+          '<div style="width:'+pct+'%;height:100%;background:'+col+';border-radius:4px"></div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+  } else if(elFlota){
+    elFlota.innerHTML='<p style="color:var(--gray-400);font-size:12px;text-align:center;padding:16px">Sin inspecciones este mes</p>';
+  }
 }
 </script>
 </script>
@@ -4621,8 +4904,16 @@ async function guardarPasosActivo(id){
 }
 
 async function mostrarFormActivo(){
-  const el=document.getElementById('form-activo');
-  if(!el)return;
+  let el=document.getElementById('form-activo');
+  if(!el){
+    const modal=document.createElement('div');
+    modal.id='form-activo-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px';
+    modal.onclick=function(e){if(e.target===modal)modal.remove();};
+    document.body.appendChild(modal);
+    modal.innerHTML='<div id="form-activo" style="background:#fff;border-radius:13px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;padding:20px"></div>';
+    el=document.getElementById('form-activo');
+  }
   el.style.display='block';
   el.innerHTML=`
     <div class="card" style="border-color:var(--blue)">
