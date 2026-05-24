@@ -1014,6 +1014,7 @@ async function renderDashboardInspectores(){
     </div>`).join('');
 }
 </script>
+<script>
 function renderCompList(data){
   if(!data.length){document.getElementById('comp-list').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">Sin compromisos registrados</p>';return;}
   const hoy=new Date();
@@ -1711,6 +1712,7 @@ async function darBaja(id,nombre){
   if(session){await iniciarApp(session.user);}
   else{document.getElementById('login-page').style.display='flex';}
 })();
+</script>
 </script>
 <script>
 // ══════════════════════════════════════════
