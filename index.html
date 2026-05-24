@@ -237,7 +237,6 @@ const TABS = {
     { id:'compromisos', label:'Compromisos', icon:'ti-alert-triangle', badge:true },
     { id:'incidencias', label:'Incidencias', icon:'ti-exclamation-circle' },
     { id:'activos', label:'Activos + SLA', icon:'ti-package' },
-    { id:'activos', label:'Activos + SLA', icon:'ti-package' },
     { id:'constructor', label:'Constructor form.', icon:'ti-forms' },
     { id:'padron', label:'Gestión padrón', icon:'ti-upload' },
     { id:'usuarios', label:'Usuarios', icon:'ti-users' },
@@ -305,7 +304,7 @@ async function renderDashboard() {
   const mes = new Date().toLocaleString('es-PE',{month:'long',year:'numeric'});
 
   document.getElementById('main-content').innerHTML = `
-    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Dashboard — ${mes.charAt(0).toUpperCase()+mes.slice(1)}</h2>
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Dashboard — ${mes.charAt(0).toUpperCase()+mes.slice(1)}</h2><div id="alerta-vencidos"></div>
     <div class="metrics-grid">
       <div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-clipboard-check"></i></div><div class="metric-val">${totalInsp||0}</div><div class="metric-lbl">Inspecciones este mes</div><div class="metric-sub">de ${totalCond||0} en padrón</div></div>
       <div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-chart-pie"></i></div><div class="metric-val" style="color:${pctColor}">${pct}%</div><div class="metric-lbl">Avance mensual</div><div class="metric-sub">${(totalCond||0)-(totalInsp||0)} pendientes</div></div>
@@ -330,7 +329,20 @@ async function renderDashboard() {
       <div id="dash-inspectores"><div class="loader"><i class="ti ti-loader"></i></div></div>
     </div>`;
   renderDashboardInspectores();
+  verificarCompromisosVencidos();
 
+  // Inspector breakdown
+  setTimeout(()=>{
+    if(!document.getElementById('dash-inspectores')){
+      const mc=document.getElementById('main-content');
+      const div=document.createElement('div');
+      div.className='card';
+      div.style.marginBottom='14px';
+      div.innerHTML='<div class="card-title">Desempeño por inspector — este mes</div><div id="dash-inspectores"><div class="loader"><i class="ti ti-loader"></i></div></div>';
+      mc.insertBefore(div,mc.children[mc.children.length-1]);
+    }
+    renderDashboardInspectores();
+  },100);
   // Cargar tabla de conductores
   const { data: conds } = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,flotas(nombre)').neq('estado','desactivado').order('nombre').limit(20);
   if(!conds?.length){ document.getElementById('dash-conductores').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">No hay conductores cargados aún. <button class="btn btn-sm btn-primary" onclick="loadTab(\'padron\')">Cargar padrón</button></p>'; return; }
@@ -378,6 +390,13 @@ async function renderInspeccion() {
         </div>
       </div>
       <div id="insp-success" style="display:none" class="alert alert-success"><div class="alert-title"><i class="ti ti-circle-check"></i> Inspección registrada correctamente</div><div style="font-size:11px;color:var(--green);margin-top:4px">El historial del conductor ha sido actualizado.</div><button class="btn btn-sm btn-primary" style="margin-top:10px" onclick="loadTab('inspeccion')"><i class="ti ti-plus"></i> Nueva inspección</button></div>
+      <div id="insp-comp-prompt" style="display:none;margin-top:12px;padding:14px;background:#fff;border:1.5px solid var(--blue);border-radius:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--gray-800);margin-bottom:10px"><i class="ti ti-alert-triangle" style="color:var(--amber)"></i> ¿Desea registrar un compromiso vehicular para este conductor?</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="irACompromiso()"><i class="ti ti-check"></i> Sí, registrar compromiso</button>
+          <button class="btn" onclick="document.getElementById('insp-comp-prompt').style.display='none'"><i class="ti ti-x"></i> No por ahora</button>
+        </div>
+      </div>
     </div>`;
   window._inspConductor = null;
 }
@@ -449,6 +468,8 @@ async function guardarInspeccion() {
   }
   document.getElementById('insp-form-body').style.display='none';
   document.getElementById('insp-success').style.display='block';
+  document.getElementById('insp-comp-prompt').style.display='block';
+  window._inspCondIdActual=_inspConductorId;
 }
 
 // ══════════════════════════════════════════
@@ -489,6 +510,8 @@ async function verHistorial(id) {
     ...(comp||[]).map(c=>({tipo:'comp',titulo:c.titulo,detalle:`Plazo: ${c.fecha_limite||'—'}`,fecha:c.created_at?.slice(0,10),res:c.estado==='resuelto'})),
   ].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
 
+  // Guardar inspecciones para ver detalle
+  window._inspecciones = insp||[];
   document.getElementById('hist-result').innerHTML=`
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -502,15 +525,24 @@ async function verHistorial(id) {
       </div>
       <div style="font-size:12px;font-weight:700;color:var(--gray-800);margin-bottom:10px">Historial completo</div>
       ${!histItems.length?'<p style="color:var(--gray-400);text-align:center;padding:20px">Sin historial registrado</p>':
-        histItems.map(h=>{
+        histItems.map((h,hi)=>{
           const icons={insp:'ti-clipboard-check',inc:'ti-exclamation-circle',comp:'ti-alert-triangle'};
           const bgs={insp:'var(--blue-light)',inc:'var(--amber-bg)',comp:'var(--red-bg)'};
           const colors={insp:'var(--blue)',inc:'var(--amber)',comp:'var(--red)'};
           return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
-            <div style="width:30px;height:30px;border-radius:50%;background:${bgs[h.tipo]};display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ${icons[h.tipo]}" style="color:${colors[h.tipo]};font-size:13px"></i></div>
-            <div style="flex:1"><div style="font-size:12px;font-weight:600">${h.titulo}${h.sub?' <span class="badge badge-ok">Subsanación</span>':''}</div><div style="font-size:11px;color:var(--gray-600)">${h.detalle}</div><div style="font-size:10px;color:var(--gray-400);margin-top:2px">${h.fecha||'—'}</div></div>
+            <div style="width:30px;height:30px;border-radius:50%;background:${bgs[h.tipo]};display:flex;align-items:center;justify-content:center;flex-shrink:0;flex-shrink:0"><i class="ti ${icons[h.tipo]}" style="color:${colors[h.tipo]};font-size:13px"></i></div>
+            <div style="flex:1">
+              <div style="font-size:12px;font-weight:600">${h.titulo}${h.sub?' <span class="badge badge-ok">Subsanación</span>':''}</div>
+              <div style="font-size:11px;color:var(--gray-600)">${h.detalle}</div>
+              <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${h.fecha||'—'}</div>
+            </div>
+            ${h.tipo==='insp'?`<div style="display:flex;gap:4px;align-items:center">
+              <button class="btn btn-sm" onclick="verDetalleInsp(${hi})"><i class="ti ti-eye"></i> Ver</button>
+              <button class="btn btn-sm" onclick="generarPDF(${hi})"><i class="ti ti-file-description"></i> PDF</button>
+            </div>`:''}
           </div>`;}).join('')}
-    </div>`;
+    </div>
+    <div id="detalle-insp-panel" style="display:none"></div>`;
 }
 
 // ══════════════════════════════════════════
@@ -518,21 +550,39 @@ async function verHistorial(id) {
 // ══════════════════════════════════════════
 async function renderBloqueos() {
   const { data } = await sb.from('bloqueos').select('*,conductores(codigo,nombre,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
+  const hoy=new Date();
+  const vencenHoy=(data||[]).filter(b=>b.tipo==='incidencia'&&b.fecha_reactivacion&&new Date(b.fecha_reactivacion)<=hoy&&b.confirmado);
   document.getElementById('main-content').innerHTML=`
-    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Bloqueos pendientes</h2>
-    <div class="alert alert-warn"><div class="alert-title"><i class="ti ti-alert-triangle"></i> Conductores que deben ser bloqueados por no pasar inspección</div></div>
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Bloqueos y suspensiones</h2>
+    ${vencenHoy.length>0?`<div class="alert alert-success"><div class="alert-title"><i class="ti ti-bell"></i> ${vencenHoy.length} suspensión${vencenHoy.length>1?'es':''} cumplida${vencenHoy.length>1?'s':''} hoy — reactivar conductor</div></div>`:''}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn btn-danger btn-sm" onclick="mostrarFormBloqueo()"><i class="ti ti-plus"></i> Nueva suspensión por incidencia</button>
+    </div>
+    <div id="form-bloqueo" style="display:none;margin-bottom:14px"></div>
     <div class="card">
-      <table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Tipo</th><th>Mes ref.</th><th>Estado</th><th>Acción</th></tr></thead>
-      <tbody>${!data?.length?'<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:20px">Sin bloqueos pendientes</td></tr>':
-        data.map(b=>`<tr>
-          <td style="font-family:monospace">${b.conductores?.codigo||'—'}</td>
-          <td style="font-weight:600">${b.conductores?.nombre||'—'}</td>
-          <td><span class="badge badge-info">${b.conductores?.flotas?.nombre||'—'}</span></td>
-          <td><span class="badge ${b.tipo==='inspeccion'?'badge-danger':'badge-warn'}">${b.tipo}</span></td>
-          <td>${b.mes_referencia||'—'}</td>
-          <td><span class="badge ${b.confirmado?'badge-danger':'badge-warn'}">${b.confirmado?'Bloqueado':'Por bloquear'}</span></td>
-          <td>${!b.confirmado?`<button class="btn btn-sm btn-danger" onclick="confirmarBloqueo('${b.id}')"><i class="ti ti-lock"></i> Confirmar</button>`:`<button class="btn btn-sm btn-primary" onclick="marcarSubsanado('${b.id}')"><i class="ti ti-check"></i> Subsanado</button>`}</td>
-        </tr>`).join('')}
+      <table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Tipo</th><th>Detalle</th><th>Días restantes</th><th>Estado</th><th>Acción</th></tr></thead>
+      <tbody>${!data?.length?'<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin bloqueos activos ✓</td></tr>':
+        data.map(b=>{
+          let diasTxt='Hasta subsanar',diasColor='var(--red)';
+          if(b.tipo==='incidencia'&&b.fecha_reactivacion){
+            const diff=Math.ceil((new Date(b.fecha_reactivacion)-hoy)/(1000*60*60*24));
+            if(diff<=0){diasTxt='Vence hoy';diasColor='var(--red)';}
+            else{diasTxt=diff+'d restantes';diasColor=diff===1?'var(--red)':'var(--amber)';}
+          }
+          return `<tr>
+            <td style="font-family:monospace;font-size:10px">${b.conductores?.codigo||'—'}</td>
+            <td style="font-weight:600">${b.conductores?.nombre||'—'}</td>
+            <td><span class="badge badge-info">${b.conductores?.flotas?.nombre||'—'}</span></td>
+            <td><span class="badge ${b.tipo==='inspeccion'?'badge-danger':'badge-warn'}">${b.tipo==='inspeccion'?'Sin inspección':'Suspensión'}</span></td>
+            <td style="font-size:11px;color:var(--gray-600)">${b.tipo==='incidencia'?'Suspendido '+(b.dias_suspension||1)+'d':b.mes_referencia||'—'}</td>
+            <td style="font-weight:700;font-size:11px;color:${diasColor}">${diasTxt}</td>
+            <td><span class="badge ${b.confirmado?'badge-danger':'badge-warn'}">${b.confirmado?'Bloqueado':'Por bloquear'}</span></td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap">
+              ${!b.confirmado?`<button class="btn btn-sm btn-danger" onclick="confirmarBloqueo('${b.id}')"><i class="ti ti-lock"></i> Bloquear</button>`:''}
+              ${b.confirmado?`<button class="btn btn-sm btn-primary" onclick="reactivarConductor('${b.id}','${(b.conductores?.nombre||'').replace(/'/g,'')}')"><i class="ti ti-check"></i> Reactivar</button>`:''}
+            </td>
+          </tr>`;
+        }).join('')}
       </tbody></table>
     </div>`;
 }
@@ -543,7 +593,12 @@ async function confirmarBloqueo(id) {
 }
 async function marcarSubsanado(id) {
   await sb.from('bloqueos').update({subsanado:true,fecha_subsanacion:new Date().toISOString().slice(0,10)}).eq('id',id);
-  alert('✅ Conductor habilitado. SMS de alerta enviado a todos los inspectores (en producción).');
+  renderBloqueos();
+}
+async function reactivarConductor(id,nombre) {
+  if(!confirm('Reactivar a '+nombre+'?'))return;
+  await sb.from('bloqueos').update({subsanado:true,fecha_subsanacion:new Date().toISOString().slice(0,10),alerta_enviada:true}).eq('id',id);
+  alert('✅ '+nombre+' reactivado correctamente.');
   renderBloqueos();
 }
 
@@ -552,35 +607,48 @@ async function marcarSubsanado(id) {
 // ══════════════════════════════════════════
 async function renderCompromisos() {
   const { data } = await sb.from('compromisos').select('*,conductores(codigo,nombre,flotas(nombre))').order('fecha_limite');
+  const hoy=new Date();
+  const urgentes=(data||[]).filter(c=>{
+    if(c.estado==='resuelto')return false;
+    const d=new Date(c.fecha_limite);
+    return Math.round((d-hoy)/(1000*60*60*24))<=3;
+  }).length;
   document.getElementById('main-content').innerHTML=`
     <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Compromisos vehiculares</h2>
+    ${urgentes>0?`<div class="alert alert-warn"><div class="alert-title"><i class="ti ti-alarm"></i> ${urgentes} compromiso${urgentes>1?'s':''} vence${urgentes>1?'n':''} en los próximos 3 días — coordinar subsanación urgente</div></div>`:''}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn btn-primary btn-sm" onclick="mostrarFormCompromiso()"><i class="ti ti-plus"></i> Nuevo compromiso</button>
+    </div>
+    <div id="form-compromiso" style="display:none;margin-bottom:14px"></div>
     <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-comp" placeholder="Buscar por conductor, código o descripción..." oninput="filtrarCompromisos()"><span class="search-count" id="cnt-comp">${data?.length||0} registros</span></div>
     <div id="comp-list"></div>`;
   window._compData=data||[];
   renderCompList(data||[]);
 }
-
-function filtrarCompromisos(){
-  const q=document.getElementById('bus-comp').value.trim().toLowerCase();
-  const fil=window._compData.filter(c=>!q||[c.conductores?.nombre,c.conductores?.codigo,c.titulo,c.descripcion].some(f=>f?.toLowerCase().includes(q)));
-  document.getElementById('cnt-comp').textContent=fil.length+' registros';
-  renderCompList(fil);
+async function mostrarResolucion(id){
+  const el=document.getElementById('resolucion-form-'+id);
+  if(el){el.style.display=el.style.display==='none'?'block':'none';}
 }
-
-function renderCompList(data){
-  if(!data.length){document.getElementById('comp-list').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">Sin compromisos registrados</p>';return;}
-  document.getElementById('comp-list').innerHTML=data.map(c=>{
-    const hoy=new Date(); const lim=new Date(c.fecha_limite);
-    const dias=Math.round((lim-hoy)/(1000*60*60*24));
-    const badge=c.estado==='resuelto'?'badge-ok':dias<0?'badge-danger':dias<=3?'badge-warn':'badge-gray';
-    const label=c.estado==='resuelto'?'Resuelto':dias<0?'Vencido':dias<=3?'Próximo a vencer':'Pendiente';
-    return `<div class="card"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px"><div><div style="font-size:13px;font-weight:700">${c.titulo}</div><div style="font-size:11px;color:var(--gray-600);margin-top:3px">${c.conductores?.nombre||'—'} · ${c.conductores?.codigo||'—'} · <span class="badge badge-info">${c.conductores?.flotas?.nombre||'—'}</span></div></div><span class="badge ${badge}">${label}</span></div><div style="display:flex;align-items:center;gap:10px;margin-top:8px"><span style="font-size:11px;color:var(--gray-400)"><i class="ti ti-calendar"></i> Plazo: ${c.fecha_limite||'—'}</span>${c.estado!=='resuelto'?`<button class="btn btn-sm" onclick="resolverCompromiso('${c.id}')"><i class="ti ti-check"></i> Marcar resuelto</button>`:''}</div>${c.estado==='resuelto'?`<div style="background:var(--green-bg);border-left:3px solid #34D399;border-radius:0 7px 7px 0;padding:7px 10px;margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase">Subsanado · ${c.fecha_resolucion||'—'}</div><div style="font-size:11px;color:var(--gray-800)">${c.nota_resolucion||'—'}</div></div>`:''}</div>`;
-  }).join('');
+async function guardarResolucion(id){
+  const nota=document.getElementById('res-nota-'+id)?.value?.trim();
+  if(!nota){alert('Describe cómo se subsanó el daño');return;}
+  const fileEl=document.getElementById('res-foto-'+id);
+  let fotoUrl=null;
+  if(fileEl?.files?.length){
+    const file=fileEl.files[0];
+    const path='compromisos/'+id+'/resolucion_'+Date.now()+'.jpg';
+    const {error:upErr}=await sb.storage.from('evidencias').upload(path,file,{upsert:true});
+    if(!upErr){const {data:ud}=sb.storage.from('evidencias').getPublicUrl(path);fotoUrl=ud.publicUrl;}
+  }
+  await sb.from('compromisos').update({estado:'resuelto',fecha_resolucion:new Date().toISOString().slice(0,10),nota_resolucion:nota,inspector_resolucion:currentPerfil?.nombre,foto_resolucion:fotoUrl}).eq('id',id);
+  renderCompromisos();
 }
-
-async function resolverCompromiso(id){
-  const nota=prompt('Detalla la subsanación realizada:');if(!nota)return;
-  await sb.from('compromisos').update({estado:'resuelto',fecha_resolucion:new Date().toISOString().slice(0,10),nota_resolucion:nota,inspector_resolucion:currentPerfil?.nombre}).eq('id',id);
+async function editarCompromiso(id){
+  const {data:c}=await sb.from('compromisos').select('*').eq('id',id).single();
+  if(!c)return;
+  const desc=prompt('Descripción:',c.descripcion||c.titulo);if(desc===null)return;
+  const fecha=prompt('Fecha límite (YYYY-MM-DD):',c.fecha_limite);if(!fecha)return;
+  await sb.from('compromisos').update({titulo:desc.slice(0,80),descripcion:desc,fecha_limite:fecha}).eq('id',id);
   renderCompromisos();
 }
 
@@ -606,11 +674,20 @@ function filtrarInc(){
 }
 
 function renderIncTb(data){
-  document.getElementById('inc-tbody').innerHTML=!data.length?'<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin incidencias</td></tr>':
-    data.map(i=>`<tr><td style="font-family:monospace;font-size:10px">${i.conductores?.codigo||'—'}</td><td style="font-weight:600">${i.conductores?.nombre||'—'}</td><td><span class="badge badge-info">${i.conductores?.flotas?.nombre||'—'}</span></td><td>${i.tipo}</td><td style="color:var(--gray-600)">${i.descripcion}</td><td>${i.accion_tomada?`<span style="font-size:11px">${i.accion_tomada}</span>`:`<button class="btn btn-sm" onclick="registrarAccion('${i.id}')"><i class="ti ti-edit"></i> Registrar</button>`}</td><td style="font-size:10px;color:var(--gray-400)">${i.fecha}</td><td><span class="badge ${i.estado==='abierta'?'badge-danger':'badge-ok'}">${i.estado}</span></td></tr>`).join('');
+  document.getElementById('inc-tbody').innerHTML=!data.length?'<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin incidencias registradas</td></tr>':
+    data.map(i=>`<tr>
+      <td><div style="font-weight:600">${i.conductores?.nombre||'—'}</div><div style="font-size:10px;color:var(--gray-400)">${i.conductores?.codigo||'—'}</div></td>
+      <td><div style="font-size:11px;font-weight:600">${i.placa_vehiculo||'—'}</div><div style="font-size:10px;color:var(--gray-400)">${i.marca_vehiculo||'—'}</div></td>
+      <td><span class="badge badge-info">${i.conductores?.flotas?.nombre||'—'}</span></td>
+      <td><span class="badge ${i.gravedad==='grave'?'badge-danger':i.gravedad==='moderada'?'badge-warn':'badge-gray'}">${i.tipo}</span></td>
+      <td style="color:var(--gray-600);font-size:11px">${i.descripcion}</td>
+      <td>${i.accion_tomada?`<span style="font-size:11px;color:var(--gray-600)">${i.accion_tomada}</span>`:`<button class="btn btn-sm" onclick="registrarAccionInc('${i.id}')"><i class="ti ti-edit"></i> Registrar</button>`}</td>
+      <td style="font-size:10px;color:var(--gray-400)">${i.fecha}</td>
+      <td><span class="badge ${i.estado==='abierta'?'badge-danger':'badge-ok'}">${i.estado}</span></td>
+    </tr>`).join('');
 }
 
-async function registrarAccion(id){
+async function registrarAccionInc(id){
   const a=prompt('Acción tomada:');if(!a)return;
   await sb.from('incidencias').update({accion_tomada:a,responsable_accion:currentPerfil?.nombre,fecha_accion:new Date().toISOString().slice(0,10),estado:'cerrada'}).eq('id',id);
   renderIncidencias();
@@ -935,6 +1012,2155 @@ async function renderDashboardInspectores(){
         <div style="font-size:10px;color:var(--gray-400)">inspecciones</div>
       </div>
     </div>`).join('');
+}
+</script>
+function renderCompList(data){
+  if(!data.length){document.getElementById('comp-list').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">Sin compromisos registrados</p>';return;}
+  const hoy=new Date();
+  // Ordenar: primero urgentes, luego pendientes por fecha, luego resueltos
+  const sorted=[...data].sort((a,b)=>{
+    if(a.estado==='resuelto'&&b.estado!=='resuelto')return 1;
+    if(a.estado!=='resuelto'&&b.estado==='resuelto')return -1;
+    return new Date(a.fecha_limite)-new Date(b.fecha_limite);
+  });
+  document.getElementById('comp-list').innerHTML=sorted.map(c=>{
+    const lim=new Date(c.fecha_limite);
+    const dias=Math.round((lim-hoy)/(1000*60*60*24));
+    const badge=c.estado==='resuelto'?'badge-ok':dias<0?'badge-danger':dias<=3?'badge-warn':'badge-gray';
+    const label=c.estado==='resuelto'?'✓ Resuelto':dias<0?'⚠ Vencido':dias<=3?'⏰ Vence pronto':'Pendiente';
+    const urgente=c.estado!=='resuelto'&&dias<=3;
+    return `<div class="card" style="${urgente?'border-color:#FCD34D;':''}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">
+        <div>
+          <div style="font-size:13px;font-weight:700">${c.titulo}</div>
+          <div style="font-size:11px;color:var(--gray-600);margin-top:3px">${c.conductores?.nombre||'—'} · ${c.conductores?.codigo||'—'} · <span class="badge badge-info">${c.conductores?.flotas?.nombre||'—'}</span></div>
+          ${c.descripcion?`<div style="font-size:11px;color:var(--gray-600);margin-top:4px">${c.descripcion}</div>`:''}
+        </div>
+        <span class="badge ${badge}">${label}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--gray-400)"><i class="ti ti-calendar"></i> Plazo: <strong>${c.fecha_limite||'—'}</strong>${dias>=0&&c.estado!=='resuelto'?' ('+dias+'d restantes)':''}</span>
+        ${c.estado!=='resuelto'?`
+          <button class="btn btn-sm" onclick="editarCompromiso('${c.id}')"><i class="ti ti-edit"></i> Editar</button>
+          <button class="btn btn-sm btn-primary" onclick="mostrarResolucion('${c.id}')"><i class="ti ti-check"></i> Marcar resuelto</button>
+        `:''}
+      </div>
+      ${c.foto_evidencia?`<div style="margin-top:8px"><img src="${c.foto_evidencia}" style="max-height:100px;border-radius:6px;border:1px solid var(--gray-200)" alt="Evidencia daño"><div style="font-size:9px;color:var(--gray-400);margin-top:2px">Foto daño registrada</div></div>`:''}
+      ${c.estado==='resuelto'?`<div style="background:var(--green-bg);border-left:3px solid #34D399;border-radius:0 7px 7px 0;padding:8px 10px;margin-top:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase">Subsanado · ${c.fecha_resolucion||'—'}</div>
+        <div style="font-size:11px;color:var(--gray-800);margin-top:2px">${c.nota_resolucion||'—'}</div>
+        ${c.foto_resolucion?`<img src="${c.foto_resolucion}" style="max-height:80px;border-radius:6px;margin-top:6px;border:1px solid #6EE7B7" alt="Evidencia resolución"><div style="font-size:9px;color:var(--green);margin-top:2px">Foto subsanación</div>`:''}
+      </div>`:''}
+      <div id="resolucion-form-${c.id}" style="display:none;margin-top:10px;padding:11px;background:var(--gray-50);border-radius:8px;border:1px solid var(--gray-200)">
+        <div style="font-size:11px;font-weight:700;color:var(--gray-800);margin-bottom:8px">Registrar subsanación</div>
+        <div style="margin-bottom:8px"><input type="text" id="res-nota-${c.id}" placeholder="Describe cómo se subsanó el daño..."></div>
+        <div style="margin-bottom:8px"><label style="font-size:10px;font-weight:700;color:var(--gray-600);display:block;margin-bottom:4px">Foto de evidencia (opcional)</label><input type="file" id="res-foto-${c.id}" accept="image/*" style="font-size:11px"></div>
+        <button class="btn btn-primary btn-sm" onclick="guardarResolucion('${c.id}')"><i class="ti ti-check"></i> Confirmar subsanación</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-password').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  if (!email || !pass) { showError('Completa email y contraseña'); return; }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader"></i> Ingresando...';
+  err.style.display = 'none';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if (error) { showError(error.message === 'Invalid login credentials' ? 'Email o contraseña incorrectos' : error.message); btn.disabled = false; btn.innerHTML = '<i class="ti ti-login"></i> Ingresar'; return; }
+  await iniciarApp(data.user);
+}
+
+function showError(msg) {
+  const err = document.getElementById('login-error');
+  err.textContent = msg;
+  err.style.display = 'block';
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+  currentUser = null; currentPerfil = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-page').style.display = 'flex';
+}
+
+async function iniciarApp(user) {
+  currentUser = user;
+  // Cargar perfil desde tabla usuarios
+  const { data: perfil } = await sb.from('usuarios').select('*').eq('id', user.id).single();
+  currentPerfil = perfil;
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('user-name').textContent = perfil?.nombre || user.email;
+  document.getElementById('user-role').textContent = perfil?.rol || 'usuario';
+  buildNav(perfil?.rol || 'inspector');
+  loadTab('dashboard');
+}
+
+// ══════════════════════════════════════════
+// NAVEGACIÓN
+// ══════════════════════════════════════════
+
+function buildNav(rol) {
+  const tabs = TABS[rol] || TABS.inspector;
+  document.getElementById('nav-tabs').innerHTML = tabs.map(t => `
+    <div class="nav-item ${t.id===currentTab?'active':''}" onclick="loadTab('${t.id}')" id="nav-${t.id}">
+      <i class="ti ${t.icon}"></i>${t.label}${t.badge?`<span class="nav-badge" id="badge-${t.id}">0</span>`:''}
+    </div>`).join('');
+}
+
+function setActiveNav(tab) {
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const el = document.getElementById('nav-'+tab);
+  if(el) el.classList.add('active');
+}
+
+// ══════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════
+async function loadTab(tab) {
+  currentTab = tab;
+  setActiveNav(tab);
+  const c = document.getElementById('main-content');
+  c.innerHTML = '<div class="loader"><i class="ti ti-loader"></i>Cargando...</div>';
+  const fns = { dashboard:renderDashboard, inspeccion:renderInspeccion, buscar:renderBuscar, bloqueos:renderBloqueos, compromisos:renderCompromisos, incidencias:renderIncidencias, activos:renderActivos, padron:renderPadron, usuarios:renderUsuarios, constructor:renderConstructor };
+  if(fns[tab]) await fns[tab]();
+  else c.innerHTML = '<div class="loader">Módulo en construcción</div>';
+}
+
+// ══════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════
+async function renderDashboard() {
+  const mesActual = new Date().toISOString().slice(0,7);
+  const [{ count: totalCond }, { count: totalInsp }, { count: bloqueos }, { count: incidencias }] = await Promise.all([
+    sb.from('conductores').select('*',{count:'exact',head:true}).neq('estado','desactivado'),
+    sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('mes_referencia',mesActual),
+    sb.from('bloqueos').select('*',{count:'exact',head:true}).eq('confirmado',true).eq('subsanado',false),
+    sb.from('incidencias').select('*',{count:'exact',head:true}).eq('estado','abierta'),
+  ]);
+  const pct = totalCond ? Math.round((totalInsp/totalCond)*100) : 0;
+  const pctColor = pct>=80?'#22C55E':pct>=50?'#F59E0B':'#EF4444';
+  const mes = new Date().toLocaleString('es-PE',{month:'long',year:'numeric'});
+
+  document.getElementById('main-content').innerHTML = `
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Dashboard — ${mes.charAt(0).toUpperCase()+mes.slice(1)}</h2><div id="alerta-vencidos"></div>
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-clipboard-check"></i></div><div class="metric-val">${totalInsp||0}</div><div class="metric-lbl">Inspecciones este mes</div><div class="metric-sub">de ${totalCond||0} en padrón</div></div>
+      <div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-chart-pie"></i></div><div class="metric-val" style="color:${pctColor}">${pct}%</div><div class="metric-lbl">Avance mensual</div><div class="metric-sub">${(totalCond||0)-(totalInsp||0)} pendientes</div></div>
+      <div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-lock"></i></div><div class="metric-val" style="color:var(--red)">${bloqueos||0}</div><div class="metric-lbl">Conductores bloqueados</div><div class="metric-sub">sin inspección</div></div>
+      <div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-exclamation-circle"></i></div><div class="metric-val">${incidencias||0}</div><div class="metric-lbl">Incidencias abiertas</div><div class="metric-sub">este mes</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Avance de inspecciones</div>
+      <div class="progress-wrap"><div class="progress-meta"><span style="font-size:12px;font-weight:600">${totalInsp||0} de ${totalCond||0} conductores inspeccionados</span><span style="font-weight:700;color:${pctColor}">${pct}%</span></div><div class="progress-bg"><div class="progress-fill" style="width:${pct}%;background:${pctColor}"></div></div></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin-bottom:0">Conductores registrados en padrón</div>
+        <button class="btn btn-primary btn-sm" onclick="loadTab('inspeccion')"><i class="ti ti-clipboard-check"></i> Nueva inspección</button>
+      </div>
+      <div id="dash-conductores"><div class="loader"><i class="ti ti-loader"></i>Cargando conductores...</div></div>
+    </div>`;
+  // Sección inspector breakdown
+  document.getElementById('main-content').innerHTML += `
+    <div class="card" style="margin-top:0">
+      <div class="card-title">Desempeño por inspector — este mes</div>
+      <div id="dash-inspectores"><div class="loader"><i class="ti ti-loader"></i></div></div>
+    </div>`;
+  renderDashboardInspectores();
+
+  // Inspector breakdown
+  setTimeout(()=>{
+    if(!document.getElementById('dash-inspectores')){
+      const mc=document.getElementById('main-content');
+      const div=document.createElement('div');
+      div.className='card';
+      div.style.marginBottom='14px';
+      div.innerHTML='<div class="card-title">Desempeño por inspector — este mes</div><div id="dash-inspectores"><div class="loader"><i class="ti ti-loader"></i></div></div>';
+      mc.insertBefore(div,mc.children[mc.children.length-1]);
+    }
+    renderDashboardInspectores();
+  },100);
+  // Cargar tabla de conductores
+  const { data: conds } = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,flotas(nombre)').neq('estado','desactivado').order('nombre').limit(20);
+  if(!conds?.length){ document.getElementById('dash-conductores').innerHTML='<p style="color:var(--gray-400);text-align:center;padding:20px">No hay conductores cargados aún. <button class="btn btn-sm btn-primary" onclick="loadTab(\'padron\')">Cargar padrón</button></p>'; return; }
+  document.getElementById('dash-conductores').innerHTML=`<table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Vehículo</th><th>Estado</th></tr></thead><tbody>${
+    conds.map(c=>`<tr><td style="font-family:monospace">${c.codigo}</td><td style="font-weight:600">${c.nombre}</td><td><span class="badge badge-info">${c.flotas?.nombre||'—'}</span></td><td style="color:var(--gray-600)">${c.vehiculo||'—'} ${c.placa?'· '+c.placa:''}</td><td><span class="badge ${c.estado==='activo'?'badge-ok':c.estado==='congelado'?'badge-warn':'badge-gray'}">${c.estado}</span></td></tr>`).join('')
+  }</tbody></table>`;
+  // Badges en nav
+  if(document.getElementById('badge-bloqueos')) document.getElementById('badge-bloqueos').textContent=bloqueos||0;
+}
+
+// ══════════════════════════════════════════
+// NUEVA INSPECCIÓN
+// ══════════════════════════════════════════
+async function renderInspeccion() {
+  const { data: campos } = await sb.from('formulario_campos').select('*').eq('formulario','inspeccion').eq('activo',true).order('orden');
+  document.getElementById('main-content').innerHTML = `
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Nueva inspección</h2>
+    <div class="card" style="max-width:620px">
+      <div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px">Paso 1 — Identificar conductor</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label><input type="text" id="insp-cod" placeholder="TD-0042" oninput="buscarConductorInsp()"></div>
+        <div class="form-field"><label class="form-label">Tipo de inspección</label><select id="insp-tipo"><option value="mensual">Mensual</option><option value="subsanacion">Subsanación de mes anterior</option></select></div>
+      </div>
+      <div id="insp-conductor-result" style="display:none;background:var(--blue-light);border:1.5px solid #BFDBFE;border-radius:9px;padding:12px 14px;margin-bottom:12px">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          <div><div style="font-size:10px;color:var(--blue);font-weight:700;text-transform:uppercase;margin-bottom:2px">Nombre</div><div style="font-size:13px;font-weight:600;color:var(--blue-dark)" id="ic-nombre">—</div></div>
+          <div><div style="font-size:10px;color:var(--blue);font-weight:700;text-transform:uppercase;margin-bottom:2px">Vehículo · Placa</div><div style="font-size:13px;font-weight:600;color:var(--blue-dark)" id="ic-vehiculo">—</div></div>
+          <div><div style="font-size:10px;color:var(--blue);font-weight:700;text-transform:uppercase;margin-bottom:2px">Flota</div><div style="font-size:13px;font-weight:600;color:var(--blue-dark)" id="ic-flota">—</div></div>
+        </div>
+      </div>
+      <div id="insp-form-body" style="display:none">
+        <div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px">Paso 2 — Inspector y fecha</div>
+        <div class="form-grid">
+          <div class="form-field"><label class="form-label">Inspector / Evaluador</label><select id="insp-evaluador"><option value="${currentUser?.id}">${currentPerfil?.nombre||'Yo'}</option></select></div>
+          <div class="form-field"><label class="form-label">Fecha de inspección</label><input type="date" id="insp-fecha" value="${new Date().toISOString().slice(0,10)}"></div>
+        </div>
+        <div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px;margin-top:4px">Paso 3 — Evaluación</div>
+        <div id="insp-campos">${renderCamposInsp(campos)}</div>
+        <div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.07em;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px">Paso 4 — Activos a reponer</div>
+        <div id="insp-activos" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px">${renderActivosCheckbox()}</div>
+        <div class="form-field" style="margin-bottom:14px"><label class="form-label">Observación general (opcional)</label><textarea id="insp-obs" rows="2" placeholder="Comentarios adicionales..."></textarea></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="guardarInspeccion()"><i class="ti ti-check"></i> Registrar inspección</button>
+          <button class="btn" onclick="loadTab('inspeccion')">Cancelar</button>
+        </div>
+      </div>
+      <div id="insp-success" style="display:none" class="alert alert-success"><div class="alert-title"><i class="ti ti-circle-check"></i> Inspección registrada correctamente</div><div style="font-size:11px;color:var(--green);margin-top:4px">El historial del conductor ha sido actualizado.</div><button class="btn btn-sm btn-primary" style="margin-top:10px" onclick="loadTab('inspeccion')"><i class="ti ti-plus"></i> Nueva inspección</button></div>
+      <div id="insp-comp-prompt" style="display:none;margin-top:12px;padding:14px;background:#fff;border:1.5px solid var(--blue);border-radius:10px">
+        <div style="font-size:13px;font-weight:700;color:var(--gray-800);margin-bottom:10px"><i class="ti ti-alert-triangle" style="color:var(--amber)"></i> ¿Desea registrar un compromiso vehicular para este conductor?</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="irACompromiso()"><i class="ti ti-check"></i> Sí, registrar compromiso</button>
+          <button class="btn" onclick="document.getElementById('insp-comp-prompt').style.display='none'"><i class="ti ti-x"></i> No por ahora</button>
+        </div>
+      </div>
+    </div>`;
+  window._inspConductor = null;
+}
+
+function renderCamposInsp(campos) {
+  if(!campos?.length) return '<p style="color:var(--gray-400);font-size:12px">No hay campos configurados. Ve al Constructor de formularios.</p>';
+  let html=''; let secActual='';
+  campos.forEach((f,i)=>{
+    if(f.seccion!==secActual){ secActual=f.seccion; html+=`<div style="font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px">${f.seccion}</div>`; }
+    let inp='';
+    if(f.tipo==='escala') inp=`<div style="display:flex;gap:8px;margin-top:6px">${[1,2,3,4,5].map(n=>`<label style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:var(--gray-400);cursor:pointer;padding:7px;border:1.5px solid var(--gray-200);border-radius:7px;text-align:center"><input type="radio" name="campo_${f.id}" value="${n}" style="accent-color:var(--blue)"> ${n}</label>`).join('')}</div>`;
+    else if(f.tipo==='sino') inp=`<div style="display:flex;gap:8px;margin-top:6px"><label style="flex:1;display:flex;align-items:center;gap:6px;padding:9px;border:1.5px solid var(--gray-200);border-radius:7px;cursor:pointer;font-size:12px"><input type="radio" name="campo_${f.id}" value="si" style="accent-color:var(--green)"> Sí</label><label style="flex:1;display:flex;align-items:center;gap:6px;padding:9px;border:1.5px solid var(--gray-200);border-radius:7px;cursor:pointer;font-size:12px"><input type="radio" name="campo_${f.id}" value="no" style="accent-color:var(--red)"> No</label></div>`;
+    else if(f.tipo==='opciones') inp=`<select name="campo_${f.id}" style="margin-top:6px"><option value="">Seleccionar...</option>${(f.opciones||[]).map(o=>`<option>${o}</option>`).join('')}</select>`;
+    else inp=`<input type="text" name="campo_${f.id}" placeholder="Respuesta..." style="margin-top:6px">`;
+    html+=`<div style="padding:9px 0;border-bottom:1px solid var(--gray-100)"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:12px;font-weight:600">${f.nombre}${f.obligatorio?'<span style="color:var(--red);margin-left:2px">*</span>':''}</div><span class="badge badge-gray">${f.seccion}</span></div>${inp}<div style="margin-top:6px"><details><summary style="font-size:10px;color:var(--blue);cursor:pointer">+ Comentario del inspector</summary><textarea rows="1" name="comentario_${f.id}" placeholder="Observación específica para este campo..." style="margin-top:5px;font-size:11px"></textarea></details></div></div>`;
+  });
+  return html;
+}
+
+function renderActivosCheckbox() {
+  const activos=[{id:'corbata',nm:'Corbata',ic:'ti-tie',subs:null},{id:'fotocheck',nm:'Fotocheck',ic:'ti-id',subs:['Lanyard','Acrílico','Tarjeta PVC']},{id:'kit',nm:'Kit identificación',ic:'ti-badge',subs:['Cabecera','Credencial']},{id:'cargador',nm:'Cable cargador',ic:'ti-plug',subs:null},{id:'charging',nm:'Charging spot',ic:'ti-device-mobile-charging',subs:null}];
+  return activos.map(a=>{
+    const subs=a.subs?`<div style="margin-top:6px;padding-left:10px;display:flex;flex-wrap:wrap;gap:5px">${a.subs.map(s=>`<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" name="sub_${a.id}" value="${s}" style="accent-color:var(--blue)"> ${s}</label>`).join('')}</div>`:'';
+    return `<div style="border:1.5px solid var(--gray-200);border-radius:9px;padding:11px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="activo" value="${a.id}" style="width:16px;height:16px;accent-color:var(--blue);flex-shrink:0"><i class="ti ${a.ic}" style="font-size:18px;color:var(--gray-400)"></i><div><div style="font-size:12px;font-weight:600">${a.nm}</div>${a.subs?`<div style="font-size:10px;color:var(--gray-400)">Selecciona subpartes</div>`:''}</div></label>${subs}</div>`;
+  }).join('');
+}
+
+let _inspConductorId=null;
+async function buscarConductorInsp() {
+  const cod=document.getElementById('insp-cod').value.trim().toUpperCase();
+  if(cod.length<3){document.getElementById('insp-conductor-result').style.display='none';document.getElementById('insp-form-body').style.display='none';return;}
+  const {data}=await sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,flotas(nombre)').eq('codigo',cod).single();
+  if(!data){document.getElementById('insp-conductor-result').style.display='none';document.getElementById('insp-form-body').style.display='none';return;}
+  _inspConductorId=data.id;
+  document.getElementById('ic-nombre').textContent=data.nombre;
+  document.getElementById('ic-vehiculo').textContent=(data.vehiculo||'—')+(data.placa?' · '+data.placa:'');
+  document.getElementById('ic-flota').textContent=data.flotas?.nombre||'—';
+  document.getElementById('insp-conductor-result').style.display='block';
+  document.getElementById('insp-form-body').style.display='block';
+}
+
+async function guardarInspeccion() {
+  if(!_inspConductorId){alert('Busca primero un conductor válido');return;}
+  const fecha=document.getElementById('insp-fecha').value;
+  const tipo=document.getElementById('insp-tipo').value;
+  const mesRef=fecha.slice(0,7);
+  const obs=document.getElementById('insp-obs').value;
+  // Recopilar campos evaluados
+  const camposEval={};
+  document.querySelectorAll('[name^="campo_"]').forEach(el=>{if(el.checked||el.tagName==='SELECT'||el.tagName==='INPUT'){const k=el.name.replace('campo_','');if(!camposEval[k])camposEval[k]=el.value;}});
+  // Recopilar comentarios
+  document.querySelectorAll('[name^="comentario_"]').forEach(el=>{if(el.value)camposEval['comentario_'+el.name.replace('comentario_','')]=el.value;});
+  // Activos solicitados
+  const activos=[]; document.querySelectorAll('[name="activo"]:checked').forEach(el=>{const subs=[];document.querySelectorAll(`[name="sub_${el.value}"]:checked`).forEach(s=>subs.push(s.value));activos.push({activo:el.value,subpartes:subs});});
+  const {data:inspData,error}=await sb.from('inspecciones').insert({conductor_id:_inspConductorId,usuario_id:currentUser.id,fecha,tipo,mes_referencia:mesRef,observacion_general:obs,activos_solicitados:activos,campos_evaluados:camposEval}).select().single();
+  if(error){alert('Error al guardar: '+error.message);return;}
+  // Registrar cada activo solicitado en solicitudes_activos
+  for(const a of activos){
+    const slaTarget = a.activo==='corbata'||a.activo==='cargador'?2:a.activo==='charging'?4:3;
+    await sb.from('solicitudes_activos').insert({
+      conductor_id:_inspConductorId,
+      inspector_id:currentUser.id,
+      activo:a.activo,
+      subpartes:a.subpartes||[],
+      origen:'inspeccion',
+      sla_target_dias:slaTarget,
+      fecha_paso1:fecha,
+    });
+  }
+  document.getElementById('insp-form-body').style.display='none';
+  document.getElementById('insp-success').style.display='block';
+  document.getElementById('insp-comp-prompt').style.display='block';
+  window._inspCondIdActual=_inspConductorId;
+}
+
+// ══════════════════════════════════════════
+// BUSCAR CONDUCTOR (historial)
+// ══════════════════════════════════════════
+async function renderBuscar() {
+  document.getElementById('main-content').innerHTML = `
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Buscar conductor</h2>
+    <div class="card" style="max-width:620px">
+      <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-inp" placeholder="Código, placa o nombre del conductor..." oninput="buscarConductorHist()"><span class="search-count" id="bus-count"></span></div>
+      <div id="bus-sugg"></div>
+    </div>
+    <div id="hist-result" style="max-width:620px"></div>`;
+}
+
+async function buscarConductorHist() {
+  const v=document.getElementById('bus-inp').value.trim();
+  if(v.length<2){document.getElementById('bus-sugg').innerHTML='';return;}
+  const {data}=await sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,estado,flotas(nombre)').or(`codigo.ilike.%${v}%,nombre.ilike.%${v}%,placa.ilike.%${v}%`).limit(5);
+  document.getElementById('bus-count').textContent=data?.length?data.length+' resultados':'';
+  document.getElementById('bus-sugg').innerHTML=data?.length
+    ?`<div style="border:1.5px solid var(--gray-200);border-radius:9px;overflow:hidden">${data.map(c=>`<div style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between" onmouseenter="this.style.background='var(--blue-light)'" onmouseleave="this.style.background='#fff'" onclick="verHistorial('${c.id}')"><div><div style="font-size:13px;font-weight:600">${c.nombre}</div><div style="font-size:11px;color:var(--gray-400)">${c.codigo} · ${c.placa||'sin placa'} · ${c.flotas?.nombre||'—'}</div></div><span class="badge ${c.estado==='activo'?'badge-ok':c.estado==='congelado'?'badge-warn':'badge-gray'}">${c.estado}</span></div>`).join('')}</div>`
+    :'<p style="color:var(--gray-400);font-size:12px;padding:8px 0">Sin resultados</p>';
+}
+
+async function verHistorial(id) {
+  document.getElementById('bus-sugg').innerHTML='';
+  const [{ data: cond },{ data: insp },{ data: inc },{ data: comp }] = await Promise.all([
+    sb.from('conductores').select('*,flotas(nombre)').eq('id',id).single(),
+    sb.from('inspecciones').select('*,usuarios(nombre)').eq('conductor_id',id).order('fecha',{ascending:false}).limit(12),
+    sb.from('incidencias').select('*').eq('conductor_id',id).order('fecha',{ascending:false}).limit(10),
+    sb.from('compromisos').select('*').eq('conductor_id',id).order('fecha_limite',{ascending:false}).limit(10),
+  ]);
+  document.getElementById('bus-inp').value=cond.nombre;
+  const histItems=[
+    ...(insp||[]).map(i=>({tipo:'insp',titulo:`Inspección ${i.tipo==='subsanacion'?'— Subsanación':''} ${i.mes_referencia}`,detalle:`Evaluador: ${i.usuarios?.nombre||'—'}`,fecha:i.fecha,sub:i.tipo==='subsanacion'})),
+    ...(inc||[]).map(i=>({tipo:'inc',titulo:`Incidencia: ${i.tipo}`,detalle:i.descripcion,fecha:i.fecha})),
+    ...(comp||[]).map(c=>({tipo:'comp',titulo:c.titulo,detalle:`Plazo: ${c.fecha_limite||'—'}`,fecha:c.created_at?.slice(0,10),res:c.estado==='resuelto'})),
+  ].sort((a,b)=>new Date(b.fecha)-new Date(a.fecha));
+
+  // Guardar inspecciones para ver detalle
+  window._inspecciones = insp||[];
+  document.getElementById('hist-result').innerHTML=`
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div><div style="font-size:16px;font-weight:700">${cond.nombre}</div><div style="font-size:11px;color:var(--gray-400);margin-top:2px">${cond.codigo} · ${cond.placa||'—'} · ${cond.vehiculo||'—'}</div></div>
+        <span class="badge ${cond.estado==='activo'?'badge-ok':cond.estado==='congelado'?'badge-warn':'badge-gray'}">${cond.estado}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:11px;background:var(--gray-50);border-radius:8px;margin-bottom:14px">
+        <div><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Flota</div><div style="font-size:12px;font-weight:600;margin-top:2px">${cond.flotas?.nombre||'—'}</div></div>
+        <div><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Inspecciones</div><div style="font-size:12px;font-weight:600;margin-top:2px">${insp?.length||0} registradas</div></div>
+        <div><div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase">Incidencias</div><div style="font-size:12px;font-weight:600;margin-top:2px">${inc?.length||0} registradas</div></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--gray-800);margin-bottom:10px">Historial completo</div>
+      ${!histItems.length?'<p style="color:var(--gray-400);text-align:center;padding:20px">Sin historial registrado</p>':
+        histItems.map((h,hi)=>{
+          const icons={insp:'ti-clipboard-check',inc:'ti-exclamation-circle',comp:'ti-alert-triangle'};
+          const bgs={insp:'var(--blue-light)',inc:'var(--amber-bg)',comp:'var(--red-bg)'};
+          const colors={insp:'var(--blue)',inc:'var(--amber)',comp:'var(--red)'};
+          return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+            <div style="width:30px;height:30px;border-radius:50%;background:${bgs[h.tipo]};display:flex;align-items:center;justify-content:center;flex-shrink:0;flex-shrink:0"><i class="ti ${icons[h.tipo]}" style="color:${colors[h.tipo]};font-size:13px"></i></div>
+            <div style="flex:1">
+              <div style="font-size:12px;font-weight:600">${h.titulo}${h.sub?' <span class="badge badge-ok">Subsanación</span>':''}</div>
+              <div style="font-size:11px;color:var(--gray-600)">${h.detalle}</div>
+              <div style="font-size:10px;color:var(--gray-400);margin-top:2px">${h.fecha||'—'}</div>
+            </div>
+            ${h.tipo==='insp'?`<div style="display:flex;gap:4px;align-items:center">
+              <button class="btn btn-sm" onclick="verDetalleInsp(${hi})"><i class="ti ti-eye"></i> Ver</button>
+              <button class="btn btn-sm" onclick="generarPDF(${hi})"><i class="ti ti-file-description"></i> PDF</button>
+            </div>`:''}
+          </div>`;}).join('')}
+    </div>
+    <div id="detalle-insp-panel" style="display:none"></div>`;
+}
+
+// ══════════════════════════════════════════
+// BLOQUEOS
+// ══════════════════════════════════════════
+async function renderBloqueos() {
+  const { data } = await sb.from('bloqueos').select('*,conductores(codigo,nombre,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
+  const hoy=new Date();
+  const vencenHoy=(data||[]).filter(b=>b.tipo==='incidencia'&&b.fecha_reactivacion&&new Date(b.fecha_reactivacion)<=hoy&&b.confirmado);
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Bloqueos y suspensiones</h2>
+    ${vencenHoy.length>0?`<div class="alert alert-success"><div class="alert-title"><i class="ti ti-bell"></i> ${vencenHoy.length} suspensión${vencenHoy.length>1?'es':''} cumplida${vencenHoy.length>1?'s':''} hoy — reactivar conductor</div></div>`:''}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn btn-danger btn-sm" onclick="mostrarFormBloqueo()"><i class="ti ti-plus"></i> Nueva suspensión por incidencia</button>
+    </div>
+    <div id="form-bloqueo" style="display:none;margin-bottom:14px"></div>
+    <div class="card">
+      <table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Tipo</th><th>Detalle</th><th>Días restantes</th><th>Estado</th><th>Acción</th></tr></thead>
+      <tbody>${!data?.length?'<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin bloqueos activos ✓</td></tr>':
+        data.map(b=>{
+          let diasTxt='Hasta subsanar',diasColor='var(--red)';
+          if(b.tipo==='incidencia'&&b.fecha_reactivacion){
+            const diff=Math.ceil((new Date(b.fecha_reactivacion)-hoy)/(1000*60*60*24));
+            if(diff<=0){diasTxt='Vence hoy';diasColor='var(--red)';}
+            else{diasTxt=diff+'d restantes';diasColor=diff===1?'var(--red)':'var(--amber)';}
+          }
+          return `<tr>
+            <td style="font-family:monospace;font-size:10px">${b.conductores?.codigo||'—'}</td>
+            <td style="font-weight:600">${b.conductores?.nombre||'—'}</td>
+            <td><span class="badge badge-info">${b.conductores?.flotas?.nombre||'—'}</span></td>
+            <td><span class="badge ${b.tipo==='inspeccion'?'badge-danger':'badge-warn'}">${b.tipo==='inspeccion'?'Sin inspección':'Suspensión'}</span></td>
+            <td style="font-size:11px;color:var(--gray-600)">${b.tipo==='incidencia'?'Suspendido '+(b.dias_suspension||1)+'d':b.mes_referencia||'—'}</td>
+            <td style="font-weight:700;font-size:11px;color:${diasColor}">${diasTxt}</td>
+            <td><span class="badge ${b.confirmado?'badge-danger':'badge-warn'}">${b.confirmado?'Bloqueado':'Por bloquear'}</span></td>
+            <td style="display:flex;gap:4px;flex-wrap:wrap">
+              ${!b.confirmado?`<button class="btn btn-sm btn-danger" onclick="confirmarBloqueo('${b.id}')"><i class="ti ti-lock"></i> Bloquear</button>`:''}
+              ${b.confirmado?`<button class="btn btn-sm btn-primary" onclick="reactivarConductor('${b.id}','${(b.conductores?.nombre||'').replace(/'/g,'')}')"><i class="ti ti-check"></i> Reactivar</button>`:''}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody></table>
+    </div>`;
+}
+
+async function confirmarBloqueo(id) {
+  await sb.from('bloqueos').update({confirmado:true,fecha_bloqueo:new Date().toISOString().slice(0,10),inspector_bloqueo:currentPerfil?.nombre}).eq('id',id);
+  renderBloqueos();
+}
+async function marcarSubsanado(id) {
+  await sb.from('bloqueos').update({subsanado:true,fecha_subsanacion:new Date().toISOString().slice(0,10)}).eq('id',id);
+  renderBloqueos();
+}
+async function reactivarConductor(id,nombre) {
+  if(!confirm('Reactivar a '+nombre+'?'))return;
+  await sb.from('bloqueos').update({subsanado:true,fecha_subsanacion:new Date().toISOString().slice(0,10),alerta_enviada:true}).eq('id',id);
+  alert('✅ '+nombre+' reactivado correctamente.');
+  renderBloqueos();
+}
+
+// ══════════════════════════════════════════
+// COMPROMISOS
+// ══════════════════════════════════════════
+async function renderCompromisos() {
+  const { data } = await sb.from('compromisos').select('*,conductores(codigo,nombre,flotas(nombre))').order('fecha_limite');
+  const hoy=new Date();
+  const urgentes=(data||[]).filter(c=>{
+    if(c.estado==='resuelto')return false;
+    const d=new Date(c.fecha_limite);
+    return Math.round((d-hoy)/(1000*60*60*24))<=3;
+  }).length;
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Compromisos vehiculares</h2>
+    ${urgentes>0?`<div class="alert alert-warn"><div class="alert-title"><i class="ti ti-alarm"></i> ${urgentes} compromiso${urgentes>1?'s':''} vence${urgentes>1?'n':''} en los próximos 3 días — coordinar subsanación urgente</div></div>`:''}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn btn-primary btn-sm" onclick="mostrarFormCompromiso()"><i class="ti ti-plus"></i> Nuevo compromiso</button>
+    </div>
+    <div id="form-compromiso" style="display:none;margin-bottom:14px"></div>
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-comp" placeholder="Buscar por conductor, código o descripción..." oninput="filtrarCompromisos()"><span class="search-count" id="cnt-comp">${data?.length||0} registros</span></div>
+    <div id="comp-list"></div>`;
+  window._compData=data||[];
+  renderCompList(data||[]);
+}
+async function mostrarResolucion(id){
+  const el=document.getElementById('resolucion-form-'+id);
+  if(el){el.style.display=el.style.display==='none'?'block':'none';}
+}
+async function guardarResolucion(id){
+  const nota=document.getElementById('res-nota-'+id)?.value?.trim();
+  if(!nota){alert('Describe cómo se subsanó el daño');return;}
+  const fileEl=document.getElementById('res-foto-'+id);
+  let fotoUrl=null;
+  if(fileEl?.files?.length){
+    const file=fileEl.files[0];
+    const path='compromisos/'+id+'/resolucion_'+Date.now()+'.jpg';
+    const {error:upErr}=await sb.storage.from('evidencias').upload(path,file,{upsert:true});
+    if(!upErr){const {data:ud}=sb.storage.from('evidencias').getPublicUrl(path);fotoUrl=ud.publicUrl;}
+  }
+  await sb.from('compromisos').update({estado:'resuelto',fecha_resolucion:new Date().toISOString().slice(0,10),nota_resolucion:nota,inspector_resolucion:currentPerfil?.nombre,foto_resolucion:fotoUrl}).eq('id',id);
+  renderCompromisos();
+}
+async function editarCompromiso(id){
+  const {data:c}=await sb.from('compromisos').select('*').eq('id',id).single();
+  if(!c)return;
+  const desc=prompt('Descripción:',c.descripcion||c.titulo);if(desc===null)return;
+  const fecha=prompt('Fecha límite (YYYY-MM-DD):',c.fecha_limite);if(!fecha)return;
+  await sb.from('compromisos').update({titulo:desc.slice(0,80),descripcion:desc,fecha_limite:fecha}).eq('id',id);
+  renderCompromisos();
+}
+
+// ══════════════════════════════════════════
+// INCIDENCIAS
+// ══════════════════════════════════════════
+async function renderIncidencias(){
+  const {data}=await sb.from('incidencias').select('*,conductores(codigo,nombre,flotas(nombre))').order('fecha',{ascending:false});
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Incidencias</h2>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="mostrarFormIncidencia()"><i class="ti ti-plus"></i> Nueva incidencia</button></div><div id="form-incidencia" style="display:none;max-width:600px;margin-bottom:14px"></div>
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-inc" placeholder="Buscar por conductor, tipo o descripción..." oninput="filtrarInc()"><span class="search-count" id="cnt-inc">${data?.length||0} registros</span></div>
+    <div class="card"><table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Tipo</th><th>Descripción</th><th>Acción tomada</th><th>Fecha</th><th>Estado</th></tr></thead><tbody id="inc-tbody"></tbody></table></div>`;
+  window._incData=data||[];
+  renderIncTb(data||[]);
+}
+
+function filtrarInc(){
+  const q=document.getElementById('bus-inc').value.trim().toLowerCase();
+  const fil=window._incData.filter(i=>!q||[i.conductores?.nombre,i.conductores?.codigo,i.tipo,i.descripcion].some(f=>f?.toLowerCase().includes(q)));
+  document.getElementById('cnt-inc').textContent=fil.length+' registros';
+  renderIncTb(fil);
+}
+
+function renderIncTb(data){
+  document.getElementById('inc-tbody').innerHTML=!data.length?'<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin incidencias</td></tr>':
+    data.map(i=>`<tr><td style="font-family:monospace;font-size:10px">${i.conductores?.codigo||'—'}</td><td style="font-weight:600">${i.conductores?.nombre||'—'}</td><td><span class="badge badge-info">${i.conductores?.flotas?.nombre||'—'}</span></td><td>${i.tipo}</td><td style="color:var(--gray-600)">${i.descripcion}${i.foto_evidencia?`<br><img src='${i.foto_evidencia}' style='max-height:50px;border-radius:4px;margin-top:3px'>`:\'\''}</td><td>${i.accion_tomada?`<span style="font-size:11px">${i.accion_tomada}</span>`:`<button class="btn btn-sm" onclick="registrarAccionInc('${i.id}')"><i class="ti ti-edit"></i> Registrar</button>`}</td><td style="font-size:10px;color:var(--gray-400)">${i.fecha}</td><td><span class="badge ${i.estado==='abierta'?'badge-danger':'badge-ok'}">${i.estado}</span></td></tr>`).join('');
+}
+
+async function registrarAccionInc(id){
+  const a=prompt('Acción tomada:');if(!a)return;
+  await sb.from('incidencias').update({accion_tomada:a,responsable_accion:currentPerfil?.nombre,fecha_accion:new Date().toISOString().slice(0,10),estado:'cerrada'}).eq('id',id);
+  renderIncidencias();
+}
+
+// ══════════════════════════════════════════
+// ACTIVOS
+// ══════════════════════════════════════════
+async function renderActivos(){
+  const {data}=await sb.from('solicitudes_activos').select('*,conductores(codigo,nombre,flotas(nombre)),usuarios(nombre)').order('created_at',{ascending:false});
+  const pendientes=(data||[]).filter(s=>!s.fecha_paso4);
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Activos + SLA</h2>
+    <div class="metrics-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-package"></i></div><div class="metric-val">${data?.length||0}</div><div class="metric-lbl">Total solicitudes</div></div>
+      <div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-clock"></i></div><div class="metric-val" style="color:var(--amber)">${pendientes.length}</div><div class="metric-lbl">Pendientes de entrega</div></div>
+      <div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-alert-circle"></i></div><div class="metric-val" style="color:var(--red)">${pendientes.filter(s=>(s.dias_sla||0)>3).length||pendientes.filter(s=>{const dias=Math.round((new Date()-new Date(s.created_at))/(1000*60*60*24));return dias>3;}).length}</div><div class="metric-lbl">Fuera de SLA (>3 días)</div></div>
+    </div>
+    <div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-act" placeholder="Buscar por conductor, código o activo..." oninput="filtrarAct()"><span class="search-count" id="cnt-act">${data?.length||0} registros</span></div>
+    <div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div style="font-size:13px;font-weight:700">Solicitudes de activos</div><button class="btn btn-sm"><i class="ti ti-download"></i> Exportar</button></div>
+    <table><thead><tr><th>Conductor</th><th>Flota</th><th>Activo</th><th>Inspector</th><th>Paso 1</th><th>Paso 4 (entrega)</th><th>SLA</th><th>Estado</th></tr></thead><tbody id="act-tbody"></tbody></table></div>`;
+  window._actData=data||[];
+  renderActTb(data||[]);
+}
+
+function filtrarAct(){
+  const q=document.getElementById('bus-act').value.trim().toLowerCase();
+  const fil=window._actData.filter(a=>!q||[a.conductores?.nombre,a.conductores?.codigo,a.activo].some(f=>f?.toLowerCase().includes(q)));
+  document.getElementById('cnt-act').textContent=fil.length+' registros';
+  renderActTb(fil);
+}
+
+function renderActTb(data){
+  document.getElementById('act-tbody').innerHTML=!data.length?'<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin solicitudes</td></tr>':
+    data.map(a=>{
+      const dias=a.dias_sla??Math.round((new Date()-new Date(a.created_at))/(1000*60*60*24));
+      const slaOk=dias<=(a.sla_target_dias||3);
+      const entregado=!!a.fecha_paso4;
+      return `<tr><td style="font-weight:600">${a.conductores?.nombre||'—'}<div style="font-size:10px;color:var(--gray-400)">${a.conductores?.codigo||'—'}</div></td><td><span class="badge badge-info">${a.conductores?.flotas?.nombre||'—'}</span></td><td>${a.activo}${a.subpartes?.length?`<div style="font-size:10px;color:var(--gray-400)">${a.subpartes.join(', ')}</div>`:''}</td><td style="font-size:11px;color:var(--gray-600)">${a.usuarios?.nombre||'—'}</td><td style="font-size:11px">${a.fecha_paso1||'—'}</td><td>${a.fecha_paso4?`<span style="font-size:11px;color:var(--green);font-weight:600">${a.fecha_paso4}</span>`:`<input type="date" style="font-size:10px;padding:4px 7px;width:130px" onchange="registrarEntrega('${a.id}',this.value)">`}</td><td><span class="badge ${entregado?(slaOk?'badge-ok':'badge-danger'):'badge-warn'}">${entregado?dias+'d':'En curso'}</span></td><td><span class="badge ${entregado?'badge-ok':'badge-warn'}">${entregado?'Entregado':'Pendiente'}</span></td></tr>`;
+    }).join('');
+}
+
+async function registrarEntrega(id,fecha){
+  const por=prompt('¿Quién entrega el activo?',currentPerfil?.nombre||'');
+  if(!por)return;
+  const {data:sol}=await sb.from('solicitudes_activos').select('created_at').eq('id',id).single();
+  const dias=Math.round((new Date(fecha)-new Date(sol.created_at))/(1000*60*60*24));
+  await sb.from('solicitudes_activos').update({fecha_paso4:fecha,entregado_por:por,dias_sla:dias}).eq('id',id);
+  renderActivos();
+}
+
+// ══════════════════════════════════════════
+// CARGA DE PADRÓN
+// ══════════════════════════════════════════
+async function renderPadron(){
+  const {data:flotas}=await sb.from('flotas').select('*');
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Gestión de padrón</h2>
+    <div class="card" style="max-width:600px">
+      <div class="card-title">Cargar padrón semanal (CSV o Excel)</div>
+      <div class="alert alert-info"><div class="alert-title"><i class="ti ti-info-circle"></i> Formato requerido del archivo</div><div style="font-size:11px;color:var(--blue);margin-top:4px">Columnas: <strong>codigo, nombre, flota, vehiculo, placa, estado</strong><br>Estado: activo | congelado | desactivado</div></div>
+      <div class="form-field" style="margin-bottom:12px"><label class="form-label">Archivo CSV</label><input type="file" id="padron-file" accept=".csv" onchange="procesarCSV(this)"></div>
+      <div id="padron-preview"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Conductores en padrón</div>
+      <div id="padron-tabla"><div class="loader"><i class="ti ti-loader"></i>Cargando...</div></div>
+    </div>`;
+  const {data:conds}=await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,flotas(nombre)').order('nombre');
+  document.getElementById('padron-tabla').innerHTML=!conds?.length?'<p style="color:var(--gray-400);text-align:center;padding:20px">Sin conductores cargados aún</p>':
+    `<table><thead><tr><th>Código</th><th>Nombre</th><th>Flota</th><th>Vehículo</th><th>Placa</th><th>Estado</th><th></th></tr></thead><tbody>${
+      conds.map(c=>`<tr><td style="font-family:monospace">${c.codigo}</td><td style="font-weight:600">${c.nombre}</td><td><span class="badge badge-info">${c.flotas?.nombre||'—'}</span></td><td style="color:var(--gray-600)">${c.vehiculo||'—'}</td><td>${c.placa||'—'}</td><td><span class="badge ${c.estado==='activo'?'badge-ok':c.estado==='congelado'?'badge-warn':'badge-gray'}">${c.estado}</span></td><td><button class="btn btn-sm btn-danger" onclick="eliminarConductor('${c.codigo}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')
+    }</tbody></table>`;
+  window._flotasData=flotas||[];
+}
+
+async function procesarCSV(input){
+  const file=input.files[0];if(!file)return;
+  const text=await file.text();
+  const lines=text.split('\n').filter(l=>l.trim());
+  const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/['"]/g,''));
+  const rows=lines.slice(1).map(l=>{
+    const vals=l.split(',').map(v=>v.trim().replace(/['"]/g,''));
+    const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||'');return obj;
+  }).filter(r=>r.codigo);
+  document.getElementById('padron-preview').innerHTML=`<div class="alert alert-info"><div class="alert-title"><i class="ti ti-file-check"></i> ${rows.length} conductores detectados</div></div><button class="btn btn-primary" onclick="subirPadron(${JSON.stringify(rows).replace(/"/g,'&quot;')})"><i class="ti ti-upload"></i> Subir ${rows.length} conductores</button>`;
+}
+
+async function subirPadron(rows){
+  const flotas=window._flotasData||[];
+  let ok=0,err=0;
+  for(const r of rows){
+    const flota=flotas.find(f=>f.nombre.toLowerCase()===r.flota?.toLowerCase());
+    const {error}=await sb.from('conductores').upsert({codigo:r.codigo.toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,placa:r.placa||null,flota_id:flota?.id||null,estado:r.estado||'activo',semana_carga:new Date().toISOString().slice(0,10)},{onConflict:'codigo'});
+    error?err++:ok++;
+  }
+  alert(`✅ ${ok} conductores procesados correctamente.${err?` ⚠️ ${err} errores.`:''}`);
+  renderPadron();
+}
+
+async function eliminarConductor(codigo){
+  if(!confirm('¿Eliminar a '+codigo+' del padrón? El historial se conservará.'))return;
+  await sb.from('conductores').update({estado:'desactivado'}).eq('codigo',codigo);
+  renderPadron();
+}
+
+// ══════════════════════════════════════════
+// USUARIOS
+// ══════════════════════════════════════════
+async function renderUsuarios(){
+  const {data}=await sb.from('usuarios').select('*').order('nombre');
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Gestión de usuarios</h2>
+    <div class="card" style="max-width:600px;margin-bottom:14px">
+      <div class="card-title">Crear nuevo usuario</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Nombre completo</label><input type="text" id="nu-nombre" placeholder="Jigsaw Ramos"></div>
+        <div class="form-field"><label class="form-label">Email</label><input type="email" id="nu-email" placeholder="jigsaw@taxidirecto.com"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Rol</label><select id="nu-rol"><option value="inspector">Inspector</option><option value="ejecutivo">Ejecutivo</option><option value="calidad">Calidad</option><option value="admin">Administrador</option></select></div>
+        <div class="form-field"><label class="form-label">Teléfono (SMS alertas)</label><input type="text" id="nu-tel" placeholder="+51 999 888 777"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Contraseña temporal</label><input type="password" id="nu-pass" placeholder="••••••••"></div>
+        <div class="form-field"><label class="form-label">Flotas asignadas</label><select id="nu-flotas"><option value="Aerolíneas,Aeropuerto">Aerolíneas + Aeropuerto</option><option value="Urbana,Plazas">Urbana + Plazas</option><option value="">Todas las flotas</option><option value="lectura">Solo lectura</option></select></div>
+      </div>
+      <button class="btn btn-primary" onclick="crearUsuario()"><i class="ti ti-user-plus"></i> Crear usuario</button>
+      <div id="nu-msg" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Usuarios del sistema</div>
+      ${!data?.length?'<p style="color:var(--gray-400);text-align:center;padding:20px">Sin usuarios registrados aún</p>':
+        `<table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Teléfono</th><th>Flotas</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${
+          data.map(u=>`<tr><td style="font-weight:600">${u.nombre}</td><td style="color:var(--gray-600)">${u.email}</td><td><span class="badge ${u.rol==='admin'?'badge-danger':u.rol==='inspector'?'badge-info':u.rol==='calidad'?'badge-warn':'badge-ok'}">${u.rol}</span></td><td style="font-size:11px;color:var(--gray-600)">${u.telefono||'—'}</td><td style="font-size:11px;color:var(--gray-600)">${u.flotas_asignadas?.join(', ')||'Todas'}</td><td><span class="badge ${u.activo?'badge-ok':'badge-gray'}">${u.activo?'Activo':'Baja'}</span></td><td style="display:flex;gap:5px"><button class="btn btn-sm" onclick="resetPass('${u.email}')"><i class="ti ti-key"></i></button>${u.id!==currentUser?.id?`<button class="btn btn-sm btn-danger" onclick="darBaja('${u.id}','${u.nombre}')"><i class="ti ti-user-off"></i></button>`:''}</td></tr>`).join('')
+        }</tbody></table>`}
+    </div>`;
+}
+
+async function crearUsuario(){
+  const nombre=document.getElementById('nu-nombre').value.trim();
+  const email=document.getElementById('nu-email').value.trim();
+  const pass=document.getElementById('nu-pass').value;
+  const rol=document.getElementById('nu-rol').value;
+  const tel=document.getElementById('nu-tel').value.trim();
+  const flotasVal=document.getElementById('nu-flotas').value;
+  const msg=document.getElementById('nu-msg');
+  if(!nombre||!email||!pass){msg.innerHTML='<span style="color:var(--red);font-size:12px">Completa nombre, email y contraseña</span>';return;}
+  msg.innerHTML='<span style="color:var(--blue);font-size:12px">Creando usuario...</span>';
+  // Guardar datos pendientes para cuando el usuario confirme
+  const pendingKey = 'pending_user_'+email;
+  localStorage.setItem(pendingKey, JSON.stringify({nombre,email,rol,telefono:tel||null,flotas_asignadas:flotasVal?flotasVal.split(','):null}));
+  const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{nombre,rol}}});
+  if(error){msg.innerHTML=`<div class="alert alert-warn"><div class="alert-title">⚠ ${error.message}</div></div>`;return;}
+  if(data?.user){
+    // Intentar insertar directamente (funciona si email_confirm está desactivado)
+    const {error:e2}=await sb.from('usuarios').insert({id:data.user.id,nombre,email,rol,telefono:tel||null,flotas_asignadas:flotasVal?flotasVal.split(','):null,activo:true});
+    if(!e2){
+      msg.innerHTML='<div class="alert alert-success"><div class="alert-title">✓ Usuario '+nombre+' creado correctamente.</div></div>';
+      document.getElementById('nu-nombre').value='';
+      document.getElementById('nu-email').value='';
+      document.getElementById('nu-pass').value='';
+      setTimeout(()=>renderUsuarios(),1500);
+      return;
+    }
+    // Si falla porque necesita confirmar email, dar instrucciones
+    msg.innerHTML='<div class="alert alert-info"><div class="alert-title">📧 Se envió email de confirmación a '+email+'</div><div style="font-size:11px;color:var(--blue);margin-top:4px">El usuario debe confirmar su email. Luego ejecuta en Supabase SQL Editor el INSERT INTO usuarios con los datos del usuario.</div></div>';
+  }
+}
+
+async function resetPass(email){
+  await sb.auth.resetPasswordForEmail(email);
+  alert('✅ Email de reseteo enviado a '+email);
+}
+
+async function darBaja(id,nombre){
+  if(!confirm('¿Dar de baja a '+nombre+'?'))return;
+  await sb.from('usuarios').update({activo:false}).eq('id',id);
+  renderUsuarios();
+}
+
+// ══════════════════════════════════════════
+// INIT — verificar sesión al cargar
+// ══════════════════════════════════════════
+(async()=>{
+  const {data:{session}}=await sb.auth.getSession();
+  if(session){await iniciarApp(session.user);}
+  else{document.getElementById('login-page').style.display='flex';}
+})();
+</script>
+<script>
+// ══════════════════════════════════════════
+// CONSTRUCTOR DE FORMULARIOS
+// ══════════════════════════════════════════
+async function renderConstructor(){
+  const {data:campos}=await sb.from('formulario_campos').select('*').order('formulario').order('orden');
+  const porForm={inspeccion:[],compromisos:[],incidencias:[],activos:[]};
+  (campos||[]).forEach(c=>{if(porForm[c.formulario])porForm[c.formulario].push(c);});
+  
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Constructor de formularios</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      ${Object.entries(porForm).map(([form,items])=>`
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div class="card-title" style="margin-bottom:0;text-transform:capitalize">${form==='inspeccion'?'Inspección':form==='compromisos'?'Compromisos':form==='incidencias'?'Incidencias':'Activos'}</div>
+            <button class="btn btn-primary btn-sm" onclick="agregarCampo('${form}')"><i class="ti ti-plus"></i> Agregar</button>
+          </div>
+          ${!items.length?'<p style="color:var(--gray-400);font-size:12px">Sin campos configurados</p>':
+            items.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+              <div style="flex:1">
+                <div style="font-size:12px;font-weight:600">${c.nombre}</div>
+                <div style="font-size:10px;color:var(--gray-400)">${c.tipo} · ${c.seccion||'—'} ${c.obligatorio?'· obligatorio':''}</div>
+              </div>
+              <span class="badge ${c.activo?'badge-ok':'badge-gray'}">${c.activo?'Activo':'Inactivo'}</span>
+              <button class="btn btn-sm" onclick="toggleCampo('${c.id}',${!c.activo})"><i class="ti ti-${c.activo?'eye-off':'eye'}"></i></button>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+}
+
+async function agregarCampo(formulario){
+  const nombre=prompt('Nombre del campo:');if(!nombre)return;
+  const tipo=prompt('Tipo (escala/sino/texto/opciones):','sino');if(!tipo)return;
+  const seccion=prompt('Sección:','General');
+  const oblig=confirm('¿Es obligatorio?');
+  const {error}=await sb.from('formulario_campos').insert({formulario,nombre,tipo,seccion,obligatorio:oblig,activo:true,orden:999});
+  if(error){alert('Error: '+error.message);return;}
+  renderConstructor();
+}
+
+async function toggleCampo(id,activo){
+  await sb.from('formulario_campos').update({activo}).eq('id',id);
+  renderConstructor();
+}
+
+// ══════════════════════════════════════════
+// NUEVA INCIDENCIA (formulario correcto)
+// ══════════════════════════════════════════
+async function mostrarFormIncidencia(){
+  const el=document.getElementById('form-incidencia');
+  if(!el)return;
+  el.style.display='block';
+  el.innerHTML=`
+    <div class="card">
+      <div class="card-title">Registrar nueva incidencia</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label><input type="text" id="ni-cod" placeholder="Ej: 205" oninput="buscarCondInc()"></div>
+        <div class="form-field"><label class="form-label">Conductor (auto)</label><input type="text" id="ni-nm" readonly style="background:var(--gray-50)"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Tipo de incidencia</label>
+          <select id="ni-tipo"><option>Vestimenta</option><option>Protocolo</option><option>Conducta</option><option>Vehículo</option><option>Documentación</option><option>Otro</option></select>
+        </div>
+        <div class="form-field"><label class="form-label">Gravedad</label>
+          <select id="ni-grav"><option value="leve">Leve</option><option value="moderada">Moderada</option><option value="grave">Grave</option></select>
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:11px"><label class="form-label">Descripción</label><textarea id="ni-desc" rows="2" placeholder="Describe la incidencia..."></textarea></div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Sanción</label>
+          <select id="ni-sancion"><option value="ninguna">Ninguna</option><option value="suspension">Suspensión</option><option value="bloqueo">Bloqueo</option></select>
+        </div>
+        <div class="form-field"><label class="form-label">Fecha</label><input type="date" id="ni-fecha" value="${new Date().toISOString().slice(0,10)}"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="guardarIncidencia()"><i class="ti ti-check"></i> Registrar incidencia</button>
+        <button class="btn" onclick="document.getElementById('form-incidencia').style.display='none'">Cancelar</button>
+      </div>
+      <div id="ni-ok" class="alert alert-success" style="display:none;margin-top:11px"><div class="alert-title">✓ Incidencia registrada correctamente</div></div>
+    </div>`;
+}
+
+let _niCondId=null;
+async function buscarCondInc(){
+  const v=document.getElementById('ni-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre').eq('codigo',v).single();
+  if(data){_niCondId=data.id;document.getElementById('ni-nm').value=data.nombre;}
+}
+
+async function guardarIncidencia(){
+  if(!_niCondId){alert('Ingresa un código de conductor válido');return;}
+  const tipo=document.getElementById('ni-tipo').value;
+  const desc=document.getElementById('ni-desc').value;
+  const grav=document.getElementById('ni-grav').value;
+  const sancion=document.getElementById('ni-sancion').value;
+  const fecha=document.getElementById('ni-fecha').value;
+  if(!desc){alert('Escribe una descripción');return;}
+  const {error}=await sb.from('incidencias').insert({conductor_id:_niCondId,usuario_id:currentUser.id,tipo,descripcion:desc,gravedad:grav,sancion,fecha,estado:'abierta'});
+  if(error){alert('Error: '+error.message);return;}
+  document.getElementById('ni-ok').style.display='block';
+  _niCondId=null;
+  setTimeout(()=>renderIncidencias(),1500);
+}
+
+// ══════════════════════════════════════════
+// DASHBOARD CON DESGLOSE POR INSPECTOR
+// ══════════════════════════════════════════
+async function renderDashboardInspectores(){
+  const mesActual=new Date().toISOString().slice(0,7);
+  const {data:insp}=await sb.from('inspecciones').select('usuario_id,usuarios(nombre,flotas_asignadas)').eq('mes_referencia',mesActual);
+  if(!insp?.length){
+    document.getElementById('dash-inspectores').innerHTML='<p style="color:var(--gray-400);font-size:12px;text-align:center;padding:16px">Sin inspecciones registradas este mes</p>';
+    return;
+  }
+  const porInsp={};
+  insp.forEach(i=>{
+    const nm=i.usuarios?.nombre||'Desconocido';
+    const flotas=i.usuarios?.flotas_asignadas||[];
+    if(!porInsp[nm])porInsp[nm]={count:0,flotas};
+    porInsp[nm].count++;
+  });
+  document.getElementById('dash-inspectores').innerHTML=Object.entries(porInsp).map(([nm,data])=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+      <div>
+        <div style="font-size:13px;font-weight:600">${nm}</div>
+        <div style="font-size:11px;color:var(--gray-400);margin-top:2px">${data.flotas.length?data.flotas.join(' · '):'Todas las flotas'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:700;color:var(--blue)">${data.count}</div>
+        <div style="font-size:10px;color:var(--gray-400)">inspecciones</div>
+      </div>
+    </div>`).join('');
+}
+</script>
+<script>
+// ══════════════════════════════════════════
+// FORMULARIO NUEVA INCIDENCIA — con campos del constructor
+// campos fijos: conductor (auto), placa, marca
+// campos editables desde constructor: tipo, gravedad, acción
+// ══════════════════════════════════════════
+async function mostrarFormIncidencia(){
+  const el=document.getElementById('form-incidencia');
+  if(!el)return;
+  // Cargar opciones editables desde formulario_campos
+  const {data:campos}=await sb.from('formulario_campos')
+    .select('*').eq('formulario','incidencias').eq('activo',true).order('orden');
+  const getTipos=campos?.find(c=>c.nombre==='Tipo de incidencia')?.opciones||['Vestimenta','Protocolo','Conducta','Vehículo','Documentación','Otro'];
+  const getGrav=campos?.find(c=>c.nombre==='Gravedad')?.opciones||['Leve','Moderada','Grave'];
+  const getAccion=campos?.find(c=>c.nombre==='Acción / Sanción')?.opciones||['Feedback verbal','Amonestación escrita','Suspensión 1 día','Cambio de flota','Bloqueo','Otro'];
+
+  el.style.display='block';
+  el.innerHTML=`
+    <div class="card" style="border-color:var(--amber)">
+      <div class="card-title"><i class="ti ti-exclamation-circle" style="color:var(--amber)"></i> Registrar nueva incidencia</div>
+      <div class="alert alert-info" style="padding:8px 12px;margin-bottom:12px">
+        <div style="font-size:11px;color:var(--blue)"><i class="ti ti-info-circle"></i> Los campos <strong>Tipo, Gravedad y Acción</strong> se editan desde <strong>Constructor de formularios</strong></div>
+      </div>
+      <!-- CAMPOS FIJOS -->
+      <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Datos del conductor — campos fijos</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label>
+          <input type="text" id="ni-cod" placeholder="Ej: 205" oninput="buscarCondIncFull()">
+        </div>
+        <div class="form-field"><label class="form-label">Conductor <span style="color:var(--green);font-size:9px">auto</span></label>
+          <input type="text" id="ni-nm" readonly style="background:var(--gnb,var(--green-bg));color:var(--gn,var(--green));font-weight:600;border-color:#6EE7B7">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Placa <span style="color:var(--green);font-size:9px">auto del padrón</span></label>
+          <input type="text" id="ni-placa" readonly style="background:var(--gray-50)">
+        </div>
+        <div class="form-field"><label class="form-label">Vehículo <span style="color:var(--green);font-size:9px">auto del padrón</span></label>
+          <input type="text" id="ni-vehiculo" readonly style="background:var(--gray-50)">
+        </div>
+      </div>
+      <!-- CAMPOS EDITABLES DESDE CONSTRUCTOR -->
+      <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">Clasificación de la incidencia — editables en Constructor</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Tipo de incidencia</label>
+          <select id="ni-tipo">${getTipos.map(o=>`<option>${o}</option>`).join('')}</select>
+        </div>
+        <div class="form-field"><label class="form-label">Gravedad</label>
+          <select id="ni-grav">${getGrav.map((o,i)=>`<option value="${o.toLowerCase()}">${o}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:11px"><label class="form-label">Descripción de la incidencia</label>
+        <textarea id="ni-desc" rows="2" placeholder="Describe en detalle lo ocurrido..."></textarea>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Acción / Sanción tomada</label>
+          <select id="ni-accion">${getAccion.map(o=>`<option>${o}</option>`).join('')}</select>
+        </div>
+        <div class="form-field"><label class="form-label">Fecha de la incidencia</label>
+          <input type="date" id="ni-fecha" value="${new Date().toISOString().slice(0,10)}">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="guardarIncidenciaFull()"><i class="ti ti-check"></i> Registrar incidencia</button>
+        <button class="btn" onclick="document.getElementById('form-incidencia').style.display='none'">Cancelar</button>
+      </div>
+      <div id="ni-ok" class="alert alert-success" style="display:none;margin-top:11px">
+        <div class="alert-title">✓ Incidencia registrada correctamente</div>
+      </div>
+    </div>`;
+  el.scrollIntoView({behavior:'smooth'});
+}
+
+let _niCondData=null;
+async function buscarCondIncFull(){
+  const v=document.getElementById('ni-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre,placa,vehiculo').eq('codigo',v).single();
+  if(data){
+    _niCondData=data;
+    document.getElementById('ni-nm').value=data.nombre;
+    document.getElementById('ni-placa').value=data.placa||'Sin placa';
+    document.getElementById('ni-vehiculo').value=data.vehiculo||'Sin vehículo';
+  }
+}
+
+async function guardarIncidenciaFull(){
+  if(!_niCondData){alert('Ingresa un código de conductor válido');return;}
+  const tipo=document.getElementById('ni-tipo').value;
+  const desc=document.getElementById('ni-desc').value.trim();
+  const grav=document.getElementById('ni-grav').value;
+  const accion=document.getElementById('ni-accion').value;
+  const fecha=document.getElementById('ni-fecha').value;
+  if(!desc){alert('Escribe una descripción');return;}
+  const {error}=await sb.from('incidencias').insert({
+    conductor_id:_niCondData.id,
+    usuario_id:currentUser.id,
+    tipo,descripcion:desc,
+    gravedad:grav,
+    accion_tomada:accion,
+    responsable_accion:currentPerfil?.nombre,
+    fecha_accion:fecha,
+    placa_vehiculo:_niCondData.placa||'',
+    marca_vehiculo:_niCondData.vehiculo||'',
+    fecha,estado:'cerrada'
+  });
+  if(error){alert('Error: '+error.message);return;}
+  document.getElementById('ni-ok').style.display='block';
+  _niCondData=null;
+  setTimeout(()=>renderIncidencias(),1500);
+}
+
+// ══════════════════════════════════════════
+// COMPROMISO CON LÓGICA DE PLACA COMPARTIDA
+// Detecta conductores con misma placa
+// ══════════════════════════════════════════
+let _compCondData=null;
+let _compCondCompartido=null;
+
+async function buscarCondCompFull(){
+  const v=document.getElementById('nc-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre,placa,vehiculo').eq('codigo',v).single();
+  if(!data)return;
+  _compCondData=data;
+  document.getElementById('nc-nm').value=data.nombre;
+  document.getElementById('nc-placa').value=data.placa||'Sin placa';
+  // Buscar si hay otro conductor con la misma placa
+  if(data.placa){
+    const {data:compartidos}=await sb.from('conductores')
+      .select('id,nombre,codigo,estado').eq('placa',data.placa).neq('id',data.id).neq('estado','desactivado');
+    _compCondCompartido=compartidos?.length?compartidos:null;
+    const alertEl=document.getElementById('nc-placa-alert');
+    if(alertEl){
+      if(_compCondCompartido?.length){
+        alertEl.style.display='block';
+        alertEl.innerHTML=`<div class="alert alert-warn" style="padding:9px 12px;margin-top:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--amber)"><i class="ti ti-alert-triangle"></i> La placa <strong>${data.placa}</strong> también está asignada a:</div>
+          ${_compCondCompartido.map(c=>`<div style="font-size:11px;color:var(--amber);margin-top:3px">• ${c.nombre} (${c.codigo}) — ${c.estado}</div>`).join('')}
+          <div style="font-size:10px;color:var(--amber);margin-top:5px">Si el compromiso es vehicular, se aplicará a ambos conductores.</div>
+        </div>`;
+      } else {
+        alertEl.style.display='none';
+      }
+    }
+  }
+}
+
+async function guardarCompromisoFull(){
+  const id=_compCondData?.id||window._compCondId;
+  if(!id){alert('Ingresa un código de conductor válido');return;}
+  const desc=document.getElementById('nc-desc')?.value?.trim();
+  const fecha=document.getElementById('nc-fecha')?.value;
+  const tipo=document.getElementById('nc-tipo')?.value;
+  if(!desc){alert('Describe el compromiso');return;}
+  if(!fecha){alert('Selecciona una fecha límite');return;}
+  const esVehicular=['Carrocería — golpe / rayón','Mecánico','Interior','Vidrios','Triángulo de seguridad','Extintor','Accesorios'].includes(tipo);
+  const placa=_compCondData?.placa||'';
+  // Preparar lista de afectados
+  const afectados=[];
+  if(esVehicular&&_compCondCompartido?.length){
+    _compCondCompartido.forEach(c=>afectados.push({id:c.id,nombre:c.nombre,codigo:c.codigo,motivo:'Comparte vehículo placa '+placa}));
+  }
+  // Subir foto si hay
+  let fotoUrl=null;
+  const fileEl=document.getElementById('nc-foto');
+  if(fileEl?.files?.length){
+    const file=fileEl.files[0];
+    const path='compromisos/dano_'+Date.now()+'.jpg';
+    const {error:upErr}=await sb.storage.from('evidencias').upload(path,file,{upsert:true});
+    if(!upErr){const {data:ud}=sb.storage.from('evidencias').getPublicUrl(path);fotoUrl=ud.publicUrl;}
+  }
+  // Guardar compromiso principal
+  const {error}=await sb.from('compromisos').insert({
+    conductor_id:id,
+    usuario_id:currentUser.id,
+    titulo:tipo+': '+desc.slice(0,60),
+    tipo_dano:tipo,
+    descripcion:desc,
+    fecha_limite:fecha,
+    estado:'pendiente',
+    foto_evidencia:fotoUrl,
+    placa_vehiculo:placa,
+    generado_por_conductor_id:id,
+    afecta_conductores:afectados,
+    es_vehicular:esVehicular
+  });
+  if(error){alert('Error: '+error.message);return;}
+  // Si es vehicular y hay conductores compartidos, crear compromiso para cada uno
+  if(esVehicular&&afectados.length){
+    for(const af of afectados){
+      await sb.from('compromisos').insert({
+        conductor_id:af.id,
+        usuario_id:currentUser.id,
+        titulo:'[Carro compartido] '+tipo+': '+desc.slice(0,50),
+        tipo_dano:tipo,
+        descripcion:desc+' — Generado por placa '+placa+' compartida con conductor '+(_compCondData?.nombre||''),
+        fecha_limite:fecha,
+        estado:'pendiente',
+        placa_vehiculo:placa,
+        generado_por_conductor_id:id,
+        afecta_conductores:[{id,nombre:_compCondData?.nombre||'',motivo:'Conductor que generó el daño'}],
+        es_vehicular:true
+      });
+    }
+    // Mostrar alerta de afectados
+    const nombresAfect=afectados.map(a=>a.nombre).join(', ');
+    alert('⚠ Compromiso vehicular registrado para '+(_compCondData?.nombre||'')+' y '+nombresAfect+' (comparten placa '+placa+')');
+  }
+  document.getElementById('nc-ok').style.display='block';
+  document.getElementById('nc-ok').querySelector('.alert-title').textContent=
+    esVehicular&&afectados.length
+      ?'✓ Compromiso registrado para '+( 1+afectados.length)+' conductores (carro compartido)'
+      :'✓ Compromiso registrado — el sistema alertará cuando esté por vencer';
+  _compCondData=null;_compCondCompartido=null;window._compCondId=null;
+  setTimeout(()=>renderCompromisos(),2000);
+}
+
+// ══════════════════════════════════════════
+// ALERTA EN CARGA DE PADRÓN — placa con compromisos pendientes
+// ══════════════════════════════════════════
+async function verificarPlacasConflicto(conductoresNuevos){
+  const alertas=[];
+  for(const c of conductoresNuevos){
+    if(!c.placa)continue;
+    // Buscar compromisos pendientes de conductores desactivados con esa placa
+    const {data:compPend}=await sb.from('compromisos')
+      .select('titulo,fecha_limite,conductores(nombre,codigo,estado)')
+      .eq('placa_vehiculo',c.placa).eq('estado','pendiente');
+    const previos=compPend?.filter(cp=>cp.conductores?.estado==='desactivado');
+    if(previos?.length){
+      alertas.push({conductor:c.nombre,placa:c.placa,compromisos:previos});
+    }
+  }
+  return alertas;
+}
+
+// ══════════════════════════════════════════
+// COMPROMISOS VENCIDOS — alerta de bloqueo
+// ══════════════════════════════════════════
+async function verificarCompromisosVencidos(){
+  const hoy=new Date().toISOString().slice(0,10);
+  const {data:vencidos}=await sb.from('compromisos')
+    .select('*,conductores(codigo,nombre,placa,flotas(nombre))')
+    .eq('estado','pendiente').lt('fecha_limite',hoy);
+  if(!vencidos?.length)return;
+  // Agrupar por placa para detectar carros compartidos
+  const porPlaca={};
+  vencidos.forEach(c=>{
+    const placa=c.placa_vehiculo||c.conductores?.placa||'sin-placa';
+    if(!porPlaca[placa])porPlaca[placa]=[];
+    porPlaca[placa].push(c);
+  });
+  // Mostrar alerta en dashboard
+  const el=document.getElementById('alerta-vencidos');
+  if(!el)return;
+  el.innerHTML=`<div class="alert alert-danger" style="background:var(--red-bg);border:1.5px solid #FCA5A5;border-radius:9px;padding:12px 14px;margin-bottom:13px">
+    <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px"><i class="ti ti-alarm"></i> ${vencidos.length} compromiso${vencidos.length>1?'s':''} vencido${vencidos.length>1?'s':''} — requieren bloqueo</div>
+    ${Object.entries(porPlaca).map(([placa,comps])=>{
+      const conductores=[...new Set(comps.map(c=>c.conductores?.nombre).filter(Boolean))];
+      return `<div style="padding:7px 0;border-bottom:1px solid #FECACA">
+        <div style="font-size:11px;font-weight:600;color:var(--red)">${conductores.join(' y ')} — Placa: ${placa}</div>
+        <div style="font-size:10px;color:var(--red);margin-top:2px">${comps.map(c=>c.tipo_dano+': '+c.titulo.slice(0,40)).join(' · ')}</div>
+        ${conductores.length>1?'<div style="font-size:10px;color:var(--red);margin-top:2px;font-weight:600">⚠ Carro compartido — bloquear a ambos</div>':''}
+        <button class="btn btn-sm btn-danger" style="margin-top:5px" onclick="loadTab('bloqueos')"><i class="ti ti-lock"></i> Ir a bloqueos</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ══════════════════════════════════════════
+// SUBIRPADRON — verificar placas con historial
+// ══════════════════════════════════════════
+async function subirPadronConVerificacion(rows){
+  const flotas=window._flotasData||[];
+  // Primero verificar alertas de placa
+  const alertasPlaca=await verificarPlacasConflicto(rows);
+  if(alertasPlaca.length){
+    let msg='⚠ ATENCIÓN — Placas con compromisos pendientes de conductores anteriores:\n\n';
+    alertasPlaca.forEach(a=>{
+      msg+=`• ${a.conductor} (${a.placa}): ${a.compromisos.length} compromiso(s) pendiente(s) de ${a.compromisos[0]?.conductores?.nombre||'conductor anterior'}\n`;
+    });
+    msg+='\n¿Deseas continuar con la carga de padrón?';
+    if(!confirm(msg))return;
+  }
+  // Procesar carga normal
+  let ok=0,err=0;
+  for(const r of rows){
+    const flota=flotas.find(f=>f.nombre.toLowerCase()===r.flota?.toLowerCase());
+    const {error}=await sb.from('conductores').upsert({
+      codigo:r.codigo.toUpperCase(),nombre:r.nombre,
+      vehiculo:r.vehiculo||null,placa:r.placa||null,
+      flota_id:flota?.id||null,estado:r.estado||'activo',
+      semana_carga:new Date().toISOString().slice(0,10)
+    },{onConflict:'codigo'});
+    error?err++:ok++;
+  }
+  alert('✅ '+ok+' conductores procesados.'+( err?' ⚠ '+err+' errores.':''));
+  renderPadron();
+}
+</script>
+</body>
+
+<script>
+// ══════════════════════════════════════════
+// CONSTRUCTOR DE FORMULARIOS
+// ══════════════════════════════════════════
+async function renderConstructor(){
+  const {data:campos}=await sb.from('formulario_campos').select('*').order('formulario').order('orden');
+  const porForm={inspeccion:[],compromisos:[],incidencias:[],activos:[]};
+  (campos||[]).forEach(c=>{if(porForm[c.formulario])porForm[c.formulario].push(c);});
+  document.getElementById('main-content').innerHTML=`
+    <h2 style="font-size:18px;font-weight:700;color:var(--gray-800);margin-bottom:16px">Constructor de formularios</h2>
+    <div class="alert alert-info"><div class="alert-title"><i class="ti ti-info-circle"></i> Gestiona los campos de cada formulario del sistema</div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      ${Object.entries(porForm).map(([form,items])=>`
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div class="card-title" style="margin-bottom:0">${form==='inspeccion'?'Inspección':form.charAt(0).toUpperCase()+form.slice(1)}</div>
+            <button class="btn btn-primary btn-sm" onclick="agregarCampo('${form}')"><i class="ti ti-plus"></i> Agregar</button>
+          </div>
+          ${!items.length?'<p style="color:var(--gray-400);font-size:12px;text-align:center;padding:12px">Sin campos configurados</p>':
+            items.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--gray-100)">
+              <div style="flex:1">
+                <div style="font-size:12px;font-weight:600">${c.nombre}</div>
+                <div style="font-size:10px;color:var(--gray-400)">${c.tipo} · ${c.seccion||'—'} ${c.obligatorio?'· obligatorio':''}</div>
+              </div>
+              <span class="badge ${c.activo?'badge-ok':'badge-gray'}">${c.activo?'Activo':'Inactivo'}</span>
+              <button class="btn btn-sm" onclick="toggleCampo('${c.id}',${!c.activo})" title="${c.activo?'Desactivar':'Activar'}"><i class="ti ti-${c.activo?'eye-off':'eye'}"></i></button>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+}
+async function agregarCampo(formulario){
+  const nombre=prompt('Nombre del campo:');if(!nombre)return;
+  const tipo=prompt('Tipo:\n1=escala (1-5)\n2=sino (Sí/No)\n3=texto libre\n4=opciones','2');
+  const tipoMap={'1':'escala','2':'sino','3':'texto','4':'opciones'};
+  const tipoFinal=tipoMap[tipo]||'sino';
+  const seccion=prompt('Sección (Ej: Vehículo, Conductor, Documentos):','General');
+  const oblig=confirm('¿Es obligatorio?');
+  await sb.from('formulario_campos').insert({formulario,nombre,tipo:tipoFinal,seccion,obligatorio:oblig,activo:true,orden:999});
+  renderConstructor();
+}
+async function toggleCampo(id,activo){
+  await sb.from('formulario_campos').update({activo}).eq('id',id);
+  renderConstructor();
+}
+
+// ══════════════════════════════════════════
+// FORMULARIO NUEVO COMPROMISO
+// ══════════════════════════════════════════
+function irACompromiso(){
+  document.getElementById('insp-comp-prompt').style.display='none';
+  loadTab('compromisos');
+  setTimeout(()=>mostrarFormCompromiso(true),600);
+}
+
+async function mostrarFormCompromiso(desdeinsp=false){
+  const el=document.getElementById('form-compromiso');
+  if(!el)return;
+  el.style.display='block';
+  el.innerHTML=`
+    <div class="card" style="border-color:var(--blue)">
+      <div class="card-title"><i class="ti ti-alert-triangle" style="color:var(--amber)"></i> Registrar nuevo compromiso vehicular</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label>
+          <input type="text" id="nc-cod" placeholder="Ej: 205" oninput="buscarCondCompFull()">
+        </div>
+        <div class="form-field"><label class="form-label">Conductor <span style="color:var(--green);font-size:9px">auto</span></label>
+          <input type="text" id="nc-nm" readonly style="background:var(--gray-50)">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Tipo de compromiso</label>
+          <select id="nc-tipo">
+            <option>Carrocería — golpe / rayón</option>
+            <option>Mecánico</option>
+            <option>Interior</option>
+            <option>Vidrios</option>
+            <option>Triángulo de seguridad</option>
+            <option>Extintor</option>
+            <option>Accesorios</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div class="form-field"><label class="form-label">Fecha límite</label>
+          <input type="date" id="nc-fecha" value="${new Date(Date.now()+7*24*60*60*1000).toISOString().slice(0,10)}">
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:11px">
+        <label class="form-label">Descripción del daño / compromiso</label>
+        <textarea id="nc-desc" rows="2" placeholder="Describe el daño o la situación que debe subsanar el conductor..."></textarea>
+      </div>
+      <div class="form-field" style="margin-bottom:12px">
+        <label class="form-label">Foto de evidencia del daño (opcional)</label>
+        <input type="file" id="nc-foto" accept="image/*" style="font-size:11px">
+        <div style="font-size:10px;color:var(--gray-400);margin-top:3px">Se guardará con fecha y hora automática</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="guardarCompromisoFull()"><i class="ti ti-check"></i> Registrar compromiso</button>
+        <button class="btn" onclick="document.getElementById('form-compromiso').style.display='none'">Cancelar</button>
+      </div>
+      <div id="nc-ok" class="alert alert-success" style="display:none;margin-top:11px">
+        <div class="alert-title">✓ Compromiso registrado — el sistema alertará cuando esté por vencer</div>
+      </div>
+    </div>`;
+  el.scrollIntoView({behavior:'smooth'});
+}
+
+let _compCondIdForm=null;
+async function buscarCondComp(){
+  const v=document.getElementById('nc-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre').eq('codigo',v).single();
+  if(data){_compCondIdForm=data.id;document.getElementById('nc-nm').value=data.nombre;}
+}
+
+async function guardarCompromiso(){
+  const id=_compCondIdForm||window._compCondId;
+  if(!id){alert('Ingresa un código de conductor válido');return;}
+  const desc=document.getElementById('nc-desc')?.value?.trim();
+  const fecha=document.getElementById('nc-fecha')?.value;
+  const tipo=document.getElementById('nc-tipo')?.value;
+  if(!desc){alert('Describe el compromiso');return;}
+  if(!fecha){alert('Selecciona una fecha límite');return;}
+  // Subir foto si hay
+  let fotoUrl=null;
+  const fileEl=document.getElementById('nc-foto');
+  if(fileEl?.files?.length){
+    const file=fileEl.files[0];
+    const path='compromisos/dano_'+Date.now()+'.jpg';
+    const {error:upErr}=await sb.storage.from('evidencias').upload(path,file,{upsert:true});
+    if(!upErr){const {data:ud}=sb.storage.from('evidencias').getPublicUrl(path);fotoUrl=ud.publicUrl;}
+  }
+  const {error}=await sb.from('compromisos').insert({
+    conductor_id:id,usuario_id:currentUser.id,
+    titulo:tipo+': '+desc.slice(0,60),
+    tipo_dano:tipo,descripcion:desc,
+    fecha_limite:fecha,estado:'pendiente',
+    foto_evidencia:fotoUrl
+  });
+  if(error){alert('Error: '+error.message);return;}
+  document.getElementById('nc-ok').style.display='block';
+  _compCondIdForm=null;window._compCondId=null;
+  setTimeout(()=>renderCompromisos(),1500);
+}
+
+// ══════════════════════════════════════════
+// NUEVA INCIDENCIA
+// ══════════════════════════════════════════
+async function mostrarFormIncidencia(){
+  const el=document.getElementById('form-incidencia');
+  if(!el)return;
+  el.style.display='block';
+  el.innerHTML=`
+    <div class="card" style="border-color:var(--amber)">
+      <div class="card-title"><i class="ti ti-exclamation-circle" style="color:var(--amber)"></i> Registrar nueva incidencia</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label><input type="text" id="ni-cod" placeholder="Ej: 205" oninput="buscarCondInc()"></div>
+        <div class="form-field"><label class="form-label">Conductor <span style="color:var(--green);font-size:9px">auto</span></label><input type="text" id="ni-nm" readonly style="background:var(--gray-50)"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Tipo</label>
+          <select id="ni-tipo"><option>Vestimenta</option><option>Protocolo</option><option>Conducta</option><option>Vehículo</option><option>Documentación</option><option>Otro</option></select>
+        </div>
+        <div class="form-field"><label class="form-label">Gravedad</label>
+          <select id="ni-grav"><option value="leve">Leve</option><option value="moderada">Moderada</option><option value="grave">Grave</option></select>
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:11px"><label class="form-label">Descripción</label><textarea id="ni-desc" rows="2" placeholder="Describe la incidencia..."></textarea></div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Sanción</label>
+          <select id="ni-sancion"><option value="ninguna">Ninguna</option><option value="suspension">Suspensión</option><option value="bloqueo">Bloqueo</option></select>
+        </div>
+        <div class="form-field"><label class="form-label">Foto de evidencia (opcional)</label><input type="file" id="ni-foto" accept="image/*" style="font-size:11px"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="guardarIncidencia()"><i class="ti ti-check"></i> Registrar incidencia</button>
+        <button class="btn" onclick="document.getElementById('form-incidencia').style.display='none'">Cancelar</button>
+      </div>
+      <div id="ni-ok" class="alert alert-success" style="display:none;margin-top:11px"><div class="alert-title">✓ Incidencia registrada correctamente</div></div>
+    </div>`;
+  el.scrollIntoView({behavior:'smooth'});
+}
+
+let _niCondId=null;
+async function buscarCondInc(){
+  const v=document.getElementById('ni-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre').eq('codigo',v).single();
+  if(data){_niCondId=data.id;document.getElementById('ni-nm').value=data.nombre;}
+}
+
+async function guardarIncidencia(){
+  if(!_niCondId){alert('Ingresa un código válido');return;}
+  const tipo=document.getElementById('ni-tipo').value;
+  const desc=document.getElementById('ni-desc').value.trim();
+  const grav=document.getElementById('ni-grav').value;
+  const sancion=document.getElementById('ni-sancion').value;
+  if(!desc){alert('Escribe una descripción');return;}
+  let fotoUrl=null;
+  const fileEl=document.getElementById('ni-foto');
+  if(fileEl?.files?.length){
+    const file=fileEl.files[0];
+    const path='incidencias/inc_'+Date.now()+'.jpg';
+    const {error:upErr}=await sb.storage.from('evidencias').upload(path,file,{upsert:true});
+    if(!upErr){const {data:ud}=sb.storage.from('evidencias').getPublicUrl(path);fotoUrl=ud.publicUrl;}
+  }
+  const {error}=await sb.from('incidencias').insert({
+    conductor_id:_niCondId,usuario_id:currentUser.id,
+    tipo,descripcion:desc,gravedad:grav,sancion,
+    fecha:new Date().toISOString().slice(0,10),estado:'abierta',
+    foto_evidencia:fotoUrl
+  });
+  if(error){alert('Error: '+error.message);return;}
+  document.getElementById('ni-ok').style.display='block';
+  _niCondId=null;
+  setTimeout(()=>renderIncidencias(),1500);
+}
+
+// ══════════════════════════════════════════
+// FORMULARIO NUEVA SUSPENSIÓN POR INCIDENCIA
+// ══════════════════════════════════════════
+async function mostrarFormBloqueo(){
+  const el=document.getElementById('form-bloqueo');
+  if(!el)return;
+  el.style.display='block';
+  const hoy=new Date();
+  el.innerHTML=`
+    <div class="card" style="border-color:var(--red)">
+      <div class="card-title" style="color:var(--red)"><i class="ti ti-lock"></i> Nueva suspensión por incidencia</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label><input type="text" id="nb-cod" placeholder="Ej: 205" oninput="buscarCondBlq()"></div>
+        <div class="form-field"><label class="form-label">Conductor <span style="color:var(--green);font-size:9px">auto</span></label><input type="text" id="nb-nm" readonly style="background:var(--gray-50)"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Días de suspensión</label>
+          <select id="nb-dias" onchange="calcFechaReact()">
+            <option value="1">1 día calendario</option>
+            <option value="2">2 días calendario</option>
+            <option value="3">3 días calendario</option>
+          </select>
+        </div>
+        <div class="form-field"><label class="form-label">Fecha de reactivación</label>
+          <input type="text" id="nb-react" readonly style="background:var(--green-bg);color:var(--green);font-weight:600;border-color:#6EE7B7">
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:12px"><label class="form-label">Motivo</label><textarea id="nb-motivo" rows="2" placeholder="Describe la incidencia que genera la suspensión..."></textarea></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-danger" onclick="guardarBloqueoInc()"><i class="ti ti-lock"></i> Registrar suspensión</button>
+        <button class="btn" onclick="document.getElementById('form-bloqueo').style.display='none'">Cancelar</button>
+      </div>
+      <div id="nb-ok" class="alert alert-success" style="display:none;margin-top:11px"><div class="alert-title">✓ Suspensión registrada correctamente</div></div>
+    </div>`;
+  calcFechaReact();
+  el.scrollIntoView({behavior:'smooth'});
+}
+
+function calcFechaReact(){
+  const dias=parseInt(document.getElementById('nb-dias')?.value||1);
+  const f=new Date();f.setDate(f.getDate()+dias);
+  const el=document.getElementById('nb-react');
+  if(el)el.value=f.toLocaleDateString('es-PE',{day:'numeric',month:'long',year:'numeric'});
+  window._blqFechaReact=f.toISOString().slice(0,10);
+}
+
+let _blqCondId=null;
+async function buscarCondBlq(){
+  const v=document.getElementById('nb-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre').eq('codigo',v).single();
+  if(data){_blqCondId=data.id;document.getElementById('nb-nm').value=data.nombre;}
+}
+
+async function guardarBloqueoInc(){
+  if(!_blqCondId){alert('Ingresa un código válido');return;}
+  const dias=parseInt(document.getElementById('nb-dias').value);
+  const motivo=document.getElementById('nb-motivo').value.trim();
+  if(!motivo){alert('Describe el motivo');return;}
+  const fechaReact=window._blqFechaReact;
+  const {error}=await sb.from('bloqueos').insert({
+    conductor_id:_blqCondId,tipo:'incidencia',confirmado:true,
+    fecha_bloqueo:new Date().toISOString().slice(0,10),
+    inspector_bloqueo:currentPerfil?.nombre||'Admin',
+    dias_suspension:dias,fecha_reactivacion:fechaReact,
+    mes_referencia:new Date().toISOString().slice(0,7)
+  });
+  if(error){alert('Error: '+error.message);return;}
+  await sb.from('incidencias').insert({
+    conductor_id:_blqCondId,usuario_id:currentUser.id,
+    tipo:'Suspensión',descripcion:motivo,gravedad:'grave',
+    sancion:'suspension',dias_suspension:dias,fecha_reactivacion:fechaReact,
+    estado:'cerrada',accion_tomada:'Suspensión '+dias+'d',
+    fecha:new Date().toISOString().slice(0,10)
+  });
+  document.getElementById('nb-ok').style.display='block';
+  _blqCondId=null;
+  setTimeout(()=>renderBloqueos(),1500);
+}
+
+// ══════════════════════════════════════════
+// VER DETALLE INSPECCIÓN + PDF
+// ══════════════════════════════════════════
+function verDetalleInsp(idx){
+  const insp=window._inspecciones;
+  if(!insp||!insp[idx])return;
+  const i=insp[idx];
+  const campos=i.campos_evaluados||{};
+  const activos=i.activos_solicitados||[];
+  const panel=document.getElementById('detalle-insp-panel');
+  if(!panel)return;
+  panel.style.display='block';
+  panel.innerHTML=`
+    <div class="card" style="border-color:var(--blue);margin-top:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin-bottom:0"><i class="ti ti-clipboard-check" style="color:var(--blue)"></i> Detalle de inspección — ${i.fecha}</div>
+        <div style="display:flex;gap:7px">
+          <span class="badge ${i.tipo==='subsanacion'?'badge-ok':'badge-info'}">${i.tipo==='subsanacion'?'Subsanación':'Mensual'}</span>
+          <button class="btn btn-sm" onclick="generarPDF(${idx})"><i class="ti ti-file-description"></i> Descargar PDF</button>
+          <button class="btn btn-sm" onclick="document.getElementById('detalle-insp-panel').style.display='none'"><i class="ti ti-x"></i></button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px;background:var(--gray-50);border-radius:8px;margin-bottom:12px;font-size:11px">
+        <div><div style="color:var(--gray-400);font-weight:700;text-transform:uppercase;font-size:9px">Fecha</div><div style="font-weight:600;margin-top:2px">${i.fecha}</div></div>
+        <div><div style="color:var(--gray-400);font-weight:700;text-transform:uppercase;font-size:9px">Mes referencia</div><div style="font-weight:600;margin-top:2px">${i.mes_referencia}</div></div>
+        <div><div style="color:var(--gray-400);font-weight:700;text-transform:uppercase;font-size:9px">Inspector</div><div style="font-weight:600;margin-top:2px">${i.usuarios?.nombre||'—'}</div></div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Campos evaluados</div>
+      ${Object.keys(campos).length?
+        Object.entries(campos).filter(([k])=>!k.startsWith('comentario_')).map(([k,v])=>`
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--gray-100);font-size:12px">
+            <span style="color:var(--gray-600)">${k}</span>
+            <strong>${v}</strong>
+          </div>`).join('')
+        :'<p style="color:var(--gray-400);font-size:12px">Sin campos registrados</p>'}
+      ${activos.length?`
+        <div style="font-size:11px;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">Activos solicitados</div>
+        ${activos.map(a=>`<div style="padding:5px 0;font-size:12px;color:var(--red)"><i class="ti ti-package"></i> ${a.activo||a}${a.subpartes?.length?' ('+a.subpartes.join(', ')+')':''}</div>`).join('')}`:''}
+      ${i.observacion_general?`<div style="margin-top:10px;padding:9px;background:var(--gray-50);border-radius:7px;font-size:11px;color:var(--gray-600)"><strong>Observación:</strong> ${i.observacion_general}</div>`:''}
+    </div>`;
+  panel.scrollIntoView({behavior:'smooth'});
+}
+
+function generarPDF(idx){
+  const insp=window._inspecciones;
+  if(!insp||!insp[idx])return;
+  const i=insp[idx];
+  const cond=document.querySelector('#hist-result .card div div')?.textContent||'Conductor';
+  const campos=i.campos_evaluados||{};
+  const activos=i.activos_solicitados||[];
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Inspección TD</title>
+  <style>body{font-family:Arial,sans-serif;padding:30px;color:#1E293B}
+  h1{color:#1A56DB;font-size:20px;margin-bottom:4px}.sub{color:#94A3B8;font-size:12px;margin-bottom:20px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1A56DB;padding-bottom:12px;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;background:#F8FAFC;padding:12px;border-radius:8px;margin-bottom:16px}
+  .lbl{font-size:9px;font-weight:700;color:#94A3B8;text-transform:uppercase;margin-bottom:3px}
+  .val{font-size:13px;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}
+  th{background:#F1F5F9;padding:7px 10px;text-align:left;font-size:10px;color:#94A3B8;text-transform:uppercase}
+  td{padding:7px 10px;border-bottom:1px solid #F1F5F9}
+  .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;background:#EBF2FF;color:#1A56DB}
+  .footer{border-top:1px solid #E2E8F0;padding-top:10px;font-size:10px;color:#94A3B8;display:flex;justify-content:space-between}
+  </style></head><body>
+  <div class="header">
+    <div><h1>Taxi Directo</h1><div class="sub">Reporte de Inspección Vehicular</div></div>
+    <div style="text-align:right;font-size:11px;color:#94A3B8">Fecha: <strong style="color:#1E293B">${i.fecha}</strong><br>Tipo: <strong style="color:#1E293B">${i.tipo==='subsanacion'?'Subsanación':'Inspección mensual'}</strong></div>
+  </div>
+  <div class="grid">
+    <div><div class="lbl">Inspector</div><div class="val">${i.usuarios?.nombre||'—'}</div></div>
+    <div><div class="lbl">Mes referencia</div><div class="val">${i.mes_referencia}</div></div>
+    <div><div class="lbl">Generado</div><div class="val">${new Date().toLocaleDateString('es-PE')}</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Campo evaluado</th><th>Resultado</th></tr></thead>
+    <tbody>${Object.entries(campos).filter(([k])=>!k.startsWith('comentario_')).map(([k,v])=>`<tr><td>${k}</td><td><strong>${v}</strong></td></tr>`).join('')||'<tr><td colspan="2" style="color:#94A3B8;text-align:center">Sin campos registrados</td></tr>'}</tbody>
+  </table>
+  ${activos.length?`<div style="margin-bottom:16px"><div class="lbl" style="margin-bottom:8px">Activos solicitados</div>${activos.map(a=>`<div style="padding:4px 0;font-size:12px;color:#B91C1C">• ${a.activo||a}${a.subpartes?.length?' ('+a.subpartes.join(', ')+')':''}</div>`).join('')}</div>`:''}
+  ${i.observacion_general?`<div style="background:#F8FAFC;padding:10px;border-radius:6px;margin-bottom:16px;font-size:12px"><strong>Observación general:</strong> ${i.observacion_general}</div>`:''}
+  <div class="footer"><span>Taxi Directo · Sistema de Gestión de Flota · Confidencial</span><span>Impreso: ${new Date().toLocaleString('es-PE')}</span></div>
+  <script>
+// ══════════════════════════════════════════
+// FORMULARIO NUEVA INCIDENCIA — con campos del constructor
+// campos fijos: conductor (auto), placa, marca
+// campos editables desde constructor: tipo, gravedad, acción
+// ══════════════════════════════════════════
+async function mostrarFormIncidencia(){
+  const el=document.getElementById('form-incidencia');
+  if(!el)return;
+  // Cargar opciones editables desde formulario_campos
+  const {data:campos}=await sb.from('formulario_campos')
+    .select('*').eq('formulario','incidencias').eq('activo',true).order('orden');
+  const getTipos=campos?.find(c=>c.nombre==='Tipo de incidencia')?.opciones||['Vestimenta','Protocolo','Conducta','Vehículo','Documentación','Otro'];
+  const getGrav=campos?.find(c=>c.nombre==='Gravedad')?.opciones||['Leve','Moderada','Grave'];
+  const getAccion=campos?.find(c=>c.nombre==='Acción / Sanción')?.opciones||['Feedback verbal','Amonestación escrita','Suspensión 1 día','Cambio de flota','Bloqueo','Otro'];
+
+  el.style.display='block';
+  el.innerHTML=`
+    <div class="card" style="border-color:var(--amber)">
+      <div class="card-title"><i class="ti ti-exclamation-circle" style="color:var(--amber)"></i> Registrar nueva incidencia</div>
+      <div class="alert alert-info" style="padding:8px 12px;margin-bottom:12px">
+        <div style="font-size:11px;color:var(--blue)"><i class="ti ti-info-circle"></i> Los campos <strong>Tipo, Gravedad y Acción</strong> se editan desde <strong>Constructor de formularios</strong></div>
+      </div>
+      <!-- CAMPOS FIJOS -->
+      <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Datos del conductor — campos fijos</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label>
+          <input type="text" id="ni-cod" placeholder="Ej: 205" oninput="buscarCondIncFull()">
+        </div>
+        <div class="form-field"><label class="form-label">Conductor <span style="color:var(--green);font-size:9px">auto</span></label>
+          <input type="text" id="ni-nm" readonly style="background:var(--gnb,var(--green-bg));color:var(--gn,var(--green));font-weight:600;border-color:#6EE7B7">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Placa <span style="color:var(--green);font-size:9px">auto del padrón</span></label>
+          <input type="text" id="ni-placa" readonly style="background:var(--gray-50)">
+        </div>
+        <div class="form-field"><label class="form-label">Vehículo <span style="color:var(--green);font-size:9px">auto del padrón</span></label>
+          <input type="text" id="ni-vehiculo" readonly style="background:var(--gray-50)">
+        </div>
+      </div>
+      <!-- CAMPOS EDITABLES DESDE CONSTRUCTOR -->
+      <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">Clasificación de la incidencia — editables en Constructor</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Tipo de incidencia</label>
+          <select id="ni-tipo">${getTipos.map(o=>`<option>${o}</option>`).join('')}</select>
+        </div>
+        <div class="form-field"><label class="form-label">Gravedad</label>
+          <select id="ni-grav">${getGrav.map((o,i)=>`<option value="${o.toLowerCase()}">${o}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:11px"><label class="form-label">Descripción de la incidencia</label>
+        <textarea id="ni-desc" rows="2" placeholder="Describe en detalle lo ocurrido..."></textarea>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Acción / Sanción tomada</label>
+          <select id="ni-accion">${getAccion.map(o=>`<option>${o}</option>`).join('')}</select>
+        </div>
+        <div class="form-field"><label class="form-label">Fecha de la incidencia</label>
+          <input type="date" id="ni-fecha" value="${new Date().toISOString().slice(0,10)}">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="guardarIncidenciaFull()"><i class="ti ti-check"></i> Registrar incidencia</button>
+        <button class="btn" onclick="document.getElementById('form-incidencia').style.display='none'">Cancelar</button>
+      </div>
+      <div id="ni-ok" class="alert alert-success" style="display:none;margin-top:11px">
+        <div class="alert-title">✓ Incidencia registrada correctamente</div>
+      </div>
+    </div>`;
+  el.scrollIntoView({behavior:'smooth'});
+}
+
+let _niCondData=null;
+async function buscarCondIncFull(){
+  const v=document.getElementById('ni-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre,placa,vehiculo').eq('codigo',v).single();
+  if(data){
+    _niCondData=data;
+    document.getElementById('ni-nm').value=data.nombre;
+    document.getElementById('ni-placa').value=data.placa||'Sin placa';
+    document.getElementById('ni-vehiculo').value=data.vehiculo||'Sin vehículo';
+  }
+}
+
+async function guardarIncidenciaFull(){
+  if(!_niCondData){alert('Ingresa un código de conductor válido');return;}
+  const tipo=document.getElementById('ni-tipo').value;
+  const desc=document.getElementById('ni-desc').value.trim();
+  const grav=document.getElementById('ni-grav').value;
+  const accion=document.getElementById('ni-accion').value;
+  const fecha=document.getElementById('ni-fecha').value;
+  if(!desc){alert('Escribe una descripción');return;}
+  const {error}=await sb.from('incidencias').insert({
+    conductor_id:_niCondData.id,
+    usuario_id:currentUser.id,
+    tipo,descripcion:desc,
+    gravedad:grav,
+    accion_tomada:accion,
+    responsable_accion:currentPerfil?.nombre,
+    fecha_accion:fecha,
+    placa_vehiculo:_niCondData.placa||'',
+    marca_vehiculo:_niCondData.vehiculo||'',
+    fecha,estado:'cerrada'
+  });
+  if(error){alert('Error: '+error.message);return;}
+  document.getElementById('ni-ok').style.display='block';
+  _niCondData=null;
+  setTimeout(()=>renderIncidencias(),1500);
+}
+
+// ══════════════════════════════════════════
+// COMPROMISO CON LÓGICA DE PLACA COMPARTIDA
+// Detecta conductores con misma placa
+// ══════════════════════════════════════════
+let _compCondData=null;
+let _compCondCompartido=null;
+
+async function buscarCondCompFull(){
+  const v=document.getElementById('nc-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre,placa,vehiculo').eq('codigo',v).single();
+  if(!data)return;
+  _compCondData=data;
+  document.getElementById('nc-nm').value=data.nombre;
+  document.getElementById('nc-placa').value=data.placa||'Sin placa';
+  // Buscar si hay otro conductor con la misma placa
+  if(data.placa){
+    const {data:compartidos}=await sb.from('conductores')
+      .select('id,nombre,codigo,estado').eq('placa',data.placa).neq('id',data.id).neq('estado','desactivado');
+    _compCondCompartido=compartidos?.length?compartidos:null;
+    const alertEl=document.getElementById('nc-placa-alert');
+    if(alertEl){
+      if(_compCondCompartido?.length){
+        alertEl.style.display='block';
+        alertEl.innerHTML=`<div class="alert alert-warn" style="padding:9px 12px;margin-top:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--amber)"><i class="ti ti-alert-triangle"></i> La placa <strong>${data.placa}</strong> también está asignada a:</div>
+          ${_compCondCompartido.map(c=>`<div style="font-size:11px;color:var(--amber);margin-top:3px">• ${c.nombre} (${c.codigo}) — ${c.estado}</div>`).join('')}
+          <div style="font-size:10px;color:var(--amber);margin-top:5px">Si el compromiso es vehicular, se aplicará a ambos conductores.</div>
+        </div>`;
+      } else {
+        alertEl.style.display='none';
+      }
+    }
+  }
+}
+
+async function guardarCompromisoFull(){
+  const id=_compCondData?.id||window._compCondId;
+  if(!id){alert('Ingresa un código de conductor válido');return;}
+  const desc=document.getElementById('nc-desc')?.value?.trim();
+  const fecha=document.getElementById('nc-fecha')?.value;
+  const tipo=document.getElementById('nc-tipo')?.value;
+  if(!desc){alert('Describe el compromiso');return;}
+  if(!fecha){alert('Selecciona una fecha límite');return;}
+  const esVehicular=['Carrocería — golpe / rayón','Mecánico','Interior','Vidrios','Triángulo de seguridad','Extintor','Accesorios'].includes(tipo);
+  const placa=_compCondData?.placa||'';
+  // Preparar lista de afectados
+  const afectados=[];
+  if(esVehicular&&_compCondCompartido?.length){
+    _compCondCompartido.forEach(c=>afectados.push({id:c.id,nombre:c.nombre,codigo:c.codigo,motivo:'Comparte vehículo placa '+placa}));
+  }
+  // Subir foto si hay
+  let fotoUrl=null;
+  const fileEl=document.getElementById('nc-foto');
+  if(fileEl?.files?.length){
+    const file=fileEl.files[0];
+    const path='compromisos/dano_'+Date.now()+'.jpg';
+    const {error:upErr}=await sb.storage.from('evidencias').upload(path,file,{upsert:true});
+    if(!upErr){const {data:ud}=sb.storage.from('evidencias').getPublicUrl(path);fotoUrl=ud.publicUrl;}
+  }
+  // Guardar compromiso principal
+  const {error}=await sb.from('compromisos').insert({
+    conductor_id:id,
+    usuario_id:currentUser.id,
+    titulo:tipo+': '+desc.slice(0,60),
+    tipo_dano:tipo,
+    descripcion:desc,
+    fecha_limite:fecha,
+    estado:'pendiente',
+    foto_evidencia:fotoUrl,
+    placa_vehiculo:placa,
+    generado_por_conductor_id:id,
+    afecta_conductores:afectados,
+    es_vehicular:esVehicular
+  });
+  if(error){alert('Error: '+error.message);return;}
+  // Si es vehicular y hay conductores compartidos, crear compromiso para cada uno
+  if(esVehicular&&afectados.length){
+    for(const af of afectados){
+      await sb.from('compromisos').insert({
+        conductor_id:af.id,
+        usuario_id:currentUser.id,
+        titulo:'[Carro compartido] '+tipo+': '+desc.slice(0,50),
+        tipo_dano:tipo,
+        descripcion:desc+' — Generado por placa '+placa+' compartida con conductor '+(_compCondData?.nombre||''),
+        fecha_limite:fecha,
+        estado:'pendiente',
+        placa_vehiculo:placa,
+        generado_por_conductor_id:id,
+        afecta_conductores:[{id,nombre:_compCondData?.nombre||'',motivo:'Conductor que generó el daño'}],
+        es_vehicular:true
+      });
+    }
+    // Mostrar alerta de afectados
+    const nombresAfect=afectados.map(a=>a.nombre).join(', ');
+    alert('⚠ Compromiso vehicular registrado para '+(_compCondData?.nombre||'')+' y '+nombresAfect+' (comparten placa '+placa+')');
+  }
+  document.getElementById('nc-ok').style.display='block';
+  document.getElementById('nc-ok').querySelector('.alert-title').textContent=
+    esVehicular&&afectados.length
+      ?'✓ Compromiso registrado para '+( 1+afectados.length)+' conductores (carro compartido)'
+      :'✓ Compromiso registrado — el sistema alertará cuando esté por vencer';
+  _compCondData=null;_compCondCompartido=null;window._compCondId=null;
+  setTimeout(()=>renderCompromisos(),2000);
+}
+
+// ══════════════════════════════════════════
+// ALERTA EN CARGA DE PADRÓN — placa con compromisos pendientes
+// ══════════════════════════════════════════
+async function verificarPlacasConflicto(conductoresNuevos){
+  const alertas=[];
+  for(const c of conductoresNuevos){
+    if(!c.placa)continue;
+    // Buscar compromisos pendientes de conductores desactivados con esa placa
+    const {data:compPend}=await sb.from('compromisos')
+      .select('titulo,fecha_limite,conductores(nombre,codigo,estado)')
+      .eq('placa_vehiculo',c.placa).eq('estado','pendiente');
+    const previos=compPend?.filter(cp=>cp.conductores?.estado==='desactivado');
+    if(previos?.length){
+      alertas.push({conductor:c.nombre,placa:c.placa,compromisos:previos});
+    }
+  }
+  return alertas;
+}
+
+// ══════════════════════════════════════════
+// COMPROMISOS VENCIDOS — alerta de bloqueo
+// ══════════════════════════════════════════
+async function verificarCompromisosVencidos(){
+  const hoy=new Date().toISOString().slice(0,10);
+  const {data:vencidos}=await sb.from('compromisos')
+    .select('*,conductores(codigo,nombre,placa,flotas(nombre))')
+    .eq('estado','pendiente').lt('fecha_limite',hoy);
+  if(!vencidos?.length)return;
+  // Agrupar por placa para detectar carros compartidos
+  const porPlaca={};
+  vencidos.forEach(c=>{
+    const placa=c.placa_vehiculo||c.conductores?.placa||'sin-placa';
+    if(!porPlaca[placa])porPlaca[placa]=[];
+    porPlaca[placa].push(c);
+  });
+  // Mostrar alerta en dashboard
+  const el=document.getElementById('alerta-vencidos');
+  if(!el)return;
+  el.innerHTML=`<div class="alert alert-danger" style="background:var(--red-bg);border:1.5px solid #FCA5A5;border-radius:9px;padding:12px 14px;margin-bottom:13px">
+    <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px"><i class="ti ti-alarm"></i> ${vencidos.length} compromiso${vencidos.length>1?'s':''} vencido${vencidos.length>1?'s':''} — requieren bloqueo</div>
+    ${Object.entries(porPlaca).map(([placa,comps])=>{
+      const conductores=[...new Set(comps.map(c=>c.conductores?.nombre).filter(Boolean))];
+      return `<div style="padding:7px 0;border-bottom:1px solid #FECACA">
+        <div style="font-size:11px;font-weight:600;color:var(--red)">${conductores.join(' y ')} — Placa: ${placa}</div>
+        <div style="font-size:10px;color:var(--red);margin-top:2px">${comps.map(c=>c.tipo_dano+': '+c.titulo.slice(0,40)).join(' · ')}</div>
+        ${conductores.length>1?'<div style="font-size:10px;color:var(--red);margin-top:2px;font-weight:600">⚠ Carro compartido — bloquear a ambos</div>':''}
+        <button class="btn btn-sm btn-danger" style="margin-top:5px" onclick="loadTab('bloqueos')"><i class="ti ti-lock"></i> Ir a bloqueos</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ══════════════════════════════════════════
+// SUBIRPADRON — verificar placas con historial
+// ══════════════════════════════════════════
+async function subirPadronConVerificacion(rows){
+  const flotas=window._flotasData||[];
+  // Primero verificar alertas de placa
+  const alertasPlaca=await verificarPlacasConflicto(rows);
+  if(alertasPlaca.length){
+    let msg='⚠ ATENCIÓN — Placas con compromisos pendientes de conductores anteriores:\n\n';
+    alertasPlaca.forEach(a=>{
+      msg+=`• ${a.conductor} (${a.placa}): ${a.compromisos.length} compromiso(s) pendiente(s) de ${a.compromisos[0]?.conductores?.nombre||'conductor anterior'}\n`;
+    });
+    msg+='\n¿Deseas continuar con la carga de padrón?';
+    if(!confirm(msg))return;
+  }
+  // Procesar carga normal
+  let ok=0,err=0;
+  for(const r of rows){
+    const flota=flotas.find(f=>f.nombre.toLowerCase()===r.flota?.toLowerCase());
+    const {error}=await sb.from('conductores').upsert({
+      codigo:r.codigo.toUpperCase(),nombre:r.nombre,
+      vehiculo:r.vehiculo||null,placa:r.placa||null,
+      flota_id:flota?.id||null,estado:r.estado||'activo',
+      semana_carga:new Date().toISOString().slice(0,10)
+    },{onConflict:'codigo'});
+    error?err++:ok++;
+  }
+  alert('✅ '+ok+' conductores procesados.'+( err?' ⚠ '+err+' errores.':''));
+  renderPadron();
+}
+</script>
+</body>`);
+  w.document.close();
+  setTimeout(()=>w.print(),500);
+}
+
+// ══════════════════════════════════════════
+// DASHBOARD - desglose por inspector
+// ══════════════════════════════════════════
+async function renderDashboardInspectores(){
+  const mesActual=new Date().toISOString().slice(0,7);
+  const {data:insp}=await sb.from('inspecciones').select('usuario_id,usuarios(nombre,flotas_asignadas)').eq('mes_referencia',mesActual);
+  const el=document.getElementById('dash-inspectores');
+  if(!el)return;
+  if(!insp?.length){el.innerHTML='<p style="color:var(--gray-400);font-size:12px;text-align:center;padding:16px">Sin inspecciones registradas este mes</p>';return;}
+  const porInsp={};
+  insp.forEach(i=>{
+    const nm=i.usuarios?.nombre||'Desconocido';
+    if(!porInsp[nm])porInsp[nm]={count:0,flotas:i.usuarios?.flotas_asignadas||[]};
+    porInsp[nm].count++;
+  });
+  el.innerHTML=Object.entries(porInsp).sort((a,b)=>b[1].count-a[1].count).map(([nm,d])=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)">
+      <div>
+        <div style="font-size:13px;font-weight:600">${nm}</div>
+        <div style="font-size:11px;color:var(--gray-400);margin-top:2px">${d.flotas.length?d.flotas.join(' · '):'Todas las flotas'}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:20px;font-weight:700;color:var(--blue)">${d.count}</div>
+        <div style="font-size:10px;color:var(--gray-400)">inspecciones</div>
+      </div>
+    </div>`).join('');
+}
+</script>
+<script>
+// ══════════════════════════════════════════
+// FORMULARIO NUEVA INCIDENCIA — con campos del constructor
+// campos fijos: conductor (auto), placa, marca
+// campos editables desde constructor: tipo, gravedad, acción
+// ══════════════════════════════════════════
+async function mostrarFormIncidencia(){
+  const el=document.getElementById('form-incidencia');
+  if(!el)return;
+  // Cargar opciones editables desde formulario_campos
+  const {data:campos}=await sb.from('formulario_campos')
+    .select('*').eq('formulario','incidencias').eq('activo',true).order('orden');
+  const getTipos=campos?.find(c=>c.nombre==='Tipo de incidencia')?.opciones||['Vestimenta','Protocolo','Conducta','Vehículo','Documentación','Otro'];
+  const getGrav=campos?.find(c=>c.nombre==='Gravedad')?.opciones||['Leve','Moderada','Grave'];
+  const getAccion=campos?.find(c=>c.nombre==='Acción / Sanción')?.opciones||['Feedback verbal','Amonestación escrita','Suspensión 1 día','Cambio de flota','Bloqueo','Otro'];
+
+  el.style.display='block';
+  el.innerHTML=`
+    <div class="card" style="border-color:var(--amber)">
+      <div class="card-title"><i class="ti ti-exclamation-circle" style="color:var(--amber)"></i> Registrar nueva incidencia</div>
+      <div class="alert alert-info" style="padding:8px 12px;margin-bottom:12px">
+        <div style="font-size:11px;color:var(--blue)"><i class="ti ti-info-circle"></i> Los campos <strong>Tipo, Gravedad y Acción</strong> se editan desde <strong>Constructor de formularios</strong></div>
+      </div>
+      <!-- CAMPOS FIJOS -->
+      <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Datos del conductor — campos fijos</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Código conductor</label>
+          <input type="text" id="ni-cod" placeholder="Ej: 205" oninput="buscarCondIncFull()">
+        </div>
+        <div class="form-field"><label class="form-label">Conductor <span style="color:var(--green);font-size:9px">auto</span></label>
+          <input type="text" id="ni-nm" readonly style="background:var(--gnb,var(--green-bg));color:var(--gn,var(--green));font-weight:600;border-color:#6EE7B7">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Placa <span style="color:var(--green);font-size:9px">auto del padrón</span></label>
+          <input type="text" id="ni-placa" readonly style="background:var(--gray-50)">
+        </div>
+        <div class="form-field"><label class="form-label">Vehículo <span style="color:var(--green);font-size:9px">auto del padrón</span></label>
+          <input type="text" id="ni-vehiculo" readonly style="background:var(--gray-50)">
+        </div>
+      </div>
+      <!-- CAMPOS EDITABLES DESDE CONSTRUCTOR -->
+      <div style="font-size:10px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">Clasificación de la incidencia — editables en Constructor</div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Tipo de incidencia</label>
+          <select id="ni-tipo">${getTipos.map(o=>`<option>${o}</option>`).join('')}</select>
+        </div>
+        <div class="form-field"><label class="form-label">Gravedad</label>
+          <select id="ni-grav">${getGrav.map((o,i)=>`<option value="${o.toLowerCase()}">${o}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="form-field" style="margin-bottom:11px"><label class="form-label">Descripción de la incidencia</label>
+        <textarea id="ni-desc" rows="2" placeholder="Describe en detalle lo ocurrido..."></textarea>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label class="form-label">Acción / Sanción tomada</label>
+          <select id="ni-accion">${getAccion.map(o=>`<option>${o}</option>`).join('')}</select>
+        </div>
+        <div class="form-field"><label class="form-label">Fecha de la incidencia</label>
+          <input type="date" id="ni-fecha" value="${new Date().toISOString().slice(0,10)}">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="guardarIncidenciaFull()"><i class="ti ti-check"></i> Registrar incidencia</button>
+        <button class="btn" onclick="document.getElementById('form-incidencia').style.display='none'">Cancelar</button>
+      </div>
+      <div id="ni-ok" class="alert alert-success" style="display:none;margin-top:11px">
+        <div class="alert-title">✓ Incidencia registrada correctamente</div>
+      </div>
+    </div>`;
+  el.scrollIntoView({behavior:'smooth'});
+}
+
+let _niCondData=null;
+async function buscarCondIncFull(){
+  const v=document.getElementById('ni-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre,placa,vehiculo').eq('codigo',v).single();
+  if(data){
+    _niCondData=data;
+    document.getElementById('ni-nm').value=data.nombre;
+    document.getElementById('ni-placa').value=data.placa||'Sin placa';
+    document.getElementById('ni-vehiculo').value=data.vehiculo||'Sin vehículo';
+  }
+}
+
+async function guardarIncidenciaFull(){
+  if(!_niCondData){alert('Ingresa un código de conductor válido');return;}
+  const tipo=document.getElementById('ni-tipo').value;
+  const desc=document.getElementById('ni-desc').value.trim();
+  const grav=document.getElementById('ni-grav').value;
+  const accion=document.getElementById('ni-accion').value;
+  const fecha=document.getElementById('ni-fecha').value;
+  if(!desc){alert('Escribe una descripción');return;}
+  const {error}=await sb.from('incidencias').insert({
+    conductor_id:_niCondData.id,
+    usuario_id:currentUser.id,
+    tipo,descripcion:desc,
+    gravedad:grav,
+    accion_tomada:accion,
+    responsable_accion:currentPerfil?.nombre,
+    fecha_accion:fecha,
+    placa_vehiculo:_niCondData.placa||'',
+    marca_vehiculo:_niCondData.vehiculo||'',
+    fecha,estado:'cerrada'
+  });
+  if(error){alert('Error: '+error.message);return;}
+  document.getElementById('ni-ok').style.display='block';
+  _niCondData=null;
+  setTimeout(()=>renderIncidencias(),1500);
+}
+
+// ══════════════════════════════════════════
+// COMPROMISO CON LÓGICA DE PLACA COMPARTIDA
+// Detecta conductores con misma placa
+// ══════════════════════════════════════════
+let _compCondData=null;
+let _compCondCompartido=null;
+
+async function buscarCondCompFull(){
+  const v=document.getElementById('nc-cod').value.trim();
+  if(v.length<2)return;
+  const {data}=await sb.from('conductores').select('id,nombre,placa,vehiculo').eq('codigo',v).single();
+  if(!data)return;
+  _compCondData=data;
+  document.getElementById('nc-nm').value=data.nombre;
+  document.getElementById('nc-placa').value=data.placa||'Sin placa';
+  // Buscar si hay otro conductor con la misma placa
+  if(data.placa){
+    const {data:compartidos}=await sb.from('conductores')
+      .select('id,nombre,codigo,estado').eq('placa',data.placa).neq('id',data.id).neq('estado','desactivado');
+    _compCondCompartido=compartidos?.length?compartidos:null;
+    const alertEl=document.getElementById('nc-placa-alert');
+    if(alertEl){
+      if(_compCondCompartido?.length){
+        alertEl.style.display='block';
+        alertEl.innerHTML=`<div class="alert alert-warn" style="padding:9px 12px;margin-top:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--amber)"><i class="ti ti-alert-triangle"></i> La placa <strong>${data.placa}</strong> también está asignada a:</div>
+          ${_compCondCompartido.map(c=>`<div style="font-size:11px;color:var(--amber);margin-top:3px">• ${c.nombre} (${c.codigo}) — ${c.estado}</div>`).join('')}
+          <div style="font-size:10px;color:var(--amber);margin-top:5px">Si el compromiso es vehicular, se aplicará a ambos conductores.</div>
+        </div>`;
+      } else {
+        alertEl.style.display='none';
+      }
+    }
+  }
+}
+
+async function guardarCompromisoFull(){
+  const id=_compCondData?.id||window._compCondId;
+  if(!id){alert('Ingresa un código de conductor válido');return;}
+  const desc=document.getElementById('nc-desc')?.value?.trim();
+  const fecha=document.getElementById('nc-fecha')?.value;
+  const tipo=document.getElementById('nc-tipo')?.value;
+  if(!desc){alert('Describe el compromiso');return;}
+  if(!fecha){alert('Selecciona una fecha límite');return;}
+  const esVehicular=['Carrocería — golpe / rayón','Mecánico','Interior','Vidrios','Triángulo de seguridad','Extintor','Accesorios'].includes(tipo);
+  const placa=_compCondData?.placa||'';
+  // Preparar lista de afectados
+  const afectados=[];
+  if(esVehicular&&_compCondCompartido?.length){
+    _compCondCompartido.forEach(c=>afectados.push({id:c.id,nombre:c.nombre,codigo:c.codigo,motivo:'Comparte vehículo placa '+placa}));
+  }
+  // Subir foto si hay
+  let fotoUrl=null;
+  const fileEl=document.getElementById('nc-foto');
+  if(fileEl?.files?.length){
+    const file=fileEl.files[0];
+    const path='compromisos/dano_'+Date.now()+'.jpg';
+    const {error:upErr}=await sb.storage.from('evidencias').upload(path,file,{upsert:true});
+    if(!upErr){const {data:ud}=sb.storage.from('evidencias').getPublicUrl(path);fotoUrl=ud.publicUrl;}
+  }
+  // Guardar compromiso principal
+  const {error}=await sb.from('compromisos').insert({
+    conductor_id:id,
+    usuario_id:currentUser.id,
+    titulo:tipo+': '+desc.slice(0,60),
+    tipo_dano:tipo,
+    descripcion:desc,
+    fecha_limite:fecha,
+    estado:'pendiente',
+    foto_evidencia:fotoUrl,
+    placa_vehiculo:placa,
+    generado_por_conductor_id:id,
+    afecta_conductores:afectados,
+    es_vehicular:esVehicular
+  });
+  if(error){alert('Error: '+error.message);return;}
+  // Si es vehicular y hay conductores compartidos, crear compromiso para cada uno
+  if(esVehicular&&afectados.length){
+    for(const af of afectados){
+      await sb.from('compromisos').insert({
+        conductor_id:af.id,
+        usuario_id:currentUser.id,
+        titulo:'[Carro compartido] '+tipo+': '+desc.slice(0,50),
+        tipo_dano:tipo,
+        descripcion:desc+' — Generado por placa '+placa+' compartida con conductor '+(_compCondData?.nombre||''),
+        fecha_limite:fecha,
+        estado:'pendiente',
+        placa_vehiculo:placa,
+        generado_por_conductor_id:id,
+        afecta_conductores:[{id,nombre:_compCondData?.nombre||'',motivo:'Conductor que generó el daño'}],
+        es_vehicular:true
+      });
+    }
+    // Mostrar alerta de afectados
+    const nombresAfect=afectados.map(a=>a.nombre).join(', ');
+    alert('⚠ Compromiso vehicular registrado para '+(_compCondData?.nombre||'')+' y '+nombresAfect+' (comparten placa '+placa+')');
+  }
+  document.getElementById('nc-ok').style.display='block';
+  document.getElementById('nc-ok').querySelector('.alert-title').textContent=
+    esVehicular&&afectados.length
+      ?'✓ Compromiso registrado para '+( 1+afectados.length)+' conductores (carro compartido)'
+      :'✓ Compromiso registrado — el sistema alertará cuando esté por vencer';
+  _compCondData=null;_compCondCompartido=null;window._compCondId=null;
+  setTimeout(()=>renderCompromisos(),2000);
+}
+
+// ══════════════════════════════════════════
+// ALERTA EN CARGA DE PADRÓN — placa con compromisos pendientes
+// ══════════════════════════════════════════
+async function verificarPlacasConflicto(conductoresNuevos){
+  const alertas=[];
+  for(const c of conductoresNuevos){
+    if(!c.placa)continue;
+    // Buscar compromisos pendientes de conductores desactivados con esa placa
+    const {data:compPend}=await sb.from('compromisos')
+      .select('titulo,fecha_limite,conductores(nombre,codigo,estado)')
+      .eq('placa_vehiculo',c.placa).eq('estado','pendiente');
+    const previos=compPend?.filter(cp=>cp.conductores?.estado==='desactivado');
+    if(previos?.length){
+      alertas.push({conductor:c.nombre,placa:c.placa,compromisos:previos});
+    }
+  }
+  return alertas;
+}
+
+// ══════════════════════════════════════════
+// COMPROMISOS VENCIDOS — alerta de bloqueo
+// ══════════════════════════════════════════
+async function verificarCompromisosVencidos(){
+  const hoy=new Date().toISOString().slice(0,10);
+  const {data:vencidos}=await sb.from('compromisos')
+    .select('*,conductores(codigo,nombre,placa,flotas(nombre))')
+    .eq('estado','pendiente').lt('fecha_limite',hoy);
+  if(!vencidos?.length)return;
+  // Agrupar por placa para detectar carros compartidos
+  const porPlaca={};
+  vencidos.forEach(c=>{
+    const placa=c.placa_vehiculo||c.conductores?.placa||'sin-placa';
+    if(!porPlaca[placa])porPlaca[placa]=[];
+    porPlaca[placa].push(c);
+  });
+  // Mostrar alerta en dashboard
+  const el=document.getElementById('alerta-vencidos');
+  if(!el)return;
+  el.innerHTML=`<div class="alert alert-danger" style="background:var(--red-bg);border:1.5px solid #FCA5A5;border-radius:9px;padding:12px 14px;margin-bottom:13px">
+    <div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px"><i class="ti ti-alarm"></i> ${vencidos.length} compromiso${vencidos.length>1?'s':''} vencido${vencidos.length>1?'s':''} — requieren bloqueo</div>
+    ${Object.entries(porPlaca).map(([placa,comps])=>{
+      const conductores=[...new Set(comps.map(c=>c.conductores?.nombre).filter(Boolean))];
+      return `<div style="padding:7px 0;border-bottom:1px solid #FECACA">
+        <div style="font-size:11px;font-weight:600;color:var(--red)">${conductores.join(' y ')} — Placa: ${placa}</div>
+        <div style="font-size:10px;color:var(--red);margin-top:2px">${comps.map(c=>c.tipo_dano+': '+c.titulo.slice(0,40)).join(' · ')}</div>
+        ${conductores.length>1?'<div style="font-size:10px;color:var(--red);margin-top:2px;font-weight:600">⚠ Carro compartido — bloquear a ambos</div>':''}
+        <button class="btn btn-sm btn-danger" style="margin-top:5px" onclick="loadTab('bloqueos')"><i class="ti ti-lock"></i> Ir a bloqueos</button>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ══════════════════════════════════════════
+// SUBIRPADRON — verificar placas con historial
+// ══════════════════════════════════════════
+async function subirPadronConVerificacion(rows){
+  const flotas=window._flotasData||[];
+  // Primero verificar alertas de placa
+  const alertasPlaca=await verificarPlacasConflicto(rows);
+  if(alertasPlaca.length){
+    let msg='⚠ ATENCIÓN — Placas con compromisos pendientes de conductores anteriores:\n\n';
+    alertasPlaca.forEach(a=>{
+      msg+=`• ${a.conductor} (${a.placa}): ${a.compromisos.length} compromiso(s) pendiente(s) de ${a.compromisos[0]?.conductores?.nombre||'conductor anterior'}\n`;
+    });
+    msg+='\n¿Deseas continuar con la carga de padrón?';
+    if(!confirm(msg))return;
+  }
+  // Procesar carga normal
+  let ok=0,err=0;
+  for(const r of rows){
+    const flota=flotas.find(f=>f.nombre.toLowerCase()===r.flota?.toLowerCase());
+    const {error}=await sb.from('conductores').upsert({
+      codigo:r.codigo.toUpperCase(),nombre:r.nombre,
+      vehiculo:r.vehiculo||null,placa:r.placa||null,
+      flota_id:flota?.id||null,estado:r.estado||'activo',
+      semana_carga:new Date().toISOString().slice(0,10)
+    },{onConflict:'codigo'});
+    error?err++:ok++;
+  }
+  alert('✅ '+ok+' conductores procesados.'+( err?' ⚠ '+err+' errores.':''));
+  renderPadron();
 }
 </script>
 </body>
