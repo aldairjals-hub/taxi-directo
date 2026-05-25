@@ -762,7 +762,18 @@ async function generarPDF(inspId) {
     (i.observacion_general?'<div style="background:#F8FAFC;padding:9px;border-radius:6px;margin-top:10px;font-size:11px"><strong>Observación:</strong> '+i.observacion_general+'</div>':'') +
     '<div class="footer"><span>Taxi Directo · Sistema de Gestión de Flota</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>' +
     '<br class="no-print"><button onclick="window.print()" class="no-print" style="padding:8px 16px;background:#1A56DB;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Guardar PDF</button>' +
-    '</body></html>');
+    '
+<script>
+// Event delegation for dynamically created buttons
+document.addEventListener('click', async function(e) {
+  const editBtn = e.target.closest('.edit-opts');
+  if (editBtn) {
+    const id = editBtn.getAttribute('data-cid');
+    if (id) await editarOpcionesById(id);
+  }
+});
+</script>
+</body></html>');
   w.document.close();
 }
 </script>
@@ -1657,7 +1668,7 @@ async function renderConstructor(){
               (c.tipo==='opciones'&&c.opciones?.length?'<div style="font-size:10px;color:var(--blue);margin-top:2px">'+c.opciones.join(' · ')+'</div>':'') +
             '</div>' +
             badge(c.activo?'Activo':'Inactivo',c.activo?'ok':'gray') +
-            (c.tipo==='opciones'||c.tipo==='multiopciones'?'<button class="btn btn-sm" onclick="editarOpcionesById(\"\'+c.id+\'\"" title="Editar opciones"><i class="ti ti-list"></i></button>':'') +
+            (c.tipo==='opciones'||c.tipo==='multiopciones'?'<button class="btn btn-sm edit-opts" data-cid="'+c.id+'" title="Editar opciones"><i class="ti ti-list"></i></button>':'') +
             '<button class="btn btn-sm" onclick="toggleCampo(\''+c.id+'\','+(!c.activo)+')"><i class="ti ti-'+(c.activo?'eye-off':'eye')+'"></i></button>' +
           '</div>' +
         '</div>';
@@ -1803,10 +1814,10 @@ async function parsearPadron(){
     const rows=text.split('\n').filter(r=>r.trim());
     const headers=rows[0].split(',').map(h=>h.trim().toLowerCase().replace(/[^a-z]/g,''));
     const data=rows.slice(1).map(r=>{const cols=r.split(',');const obj={};headers.forEach((h,i)=>{obj[h]=(cols[i]||'').trim().replace(/"/g,'');});return obj;}).filter(r=>r.codigo||r.nombre);
-    el.innerHTML='<div class="alert alert-info" style="margin-bottom:10px"><div class="at"><i class="ti ti-file-check"></i> '+data.length+' conductores detectados</div></div>'+
-      '<div style="font-size:11px;color:var(--gray-600);margin-bottom:10px">Primeras 3 filas: '+data.slice(0,3).map(r=>r.nombre||r.codigo).join(', ')+'...</div>'+
-      window._padronRows2=data;
-      el.innerHTML+='<div style="margin-top:8px;display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows2)"><i class="ti ti-upload"></i> Confirmar carga (' +data.length+' conductores)</button><button class="btn" onclick="renderPadron()">Cancelar</button></div>';
+    window._padronRows2 = data;
+    el.innerHTML = '<div class="alert alert-info" style="margin-bottom:10px"><div class="at"><i class="ti ti-file-check"></i> '+data.length+' conductores detectados</div></div>';
+    el.innerHTML += '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows2)"><i class="ti ti-upload"></i> Confirmar carga ('+data.length+' conductores)</button><button class="btn" onclick="renderPadron()">Cancelar</button></div>';
+
   }catch(e){el.innerHTML='<div class="alert alert-warn"><div class="at">Error al leer el archivo. Asegúrate que sea CSV o Excel guardado como CSV.</div></div>';}
 }
 
@@ -2191,6 +2202,17 @@ async function exportarActivos() {
   const a = document.createElement('a'); a.href=url; a.download='activos_'+new Date().toISOString().slice(0,10)+'.csv'; a.click(); URL.revokeObjectURL(url);
 }
 </script>
+
+<script>
+// Event delegation for dynamically created buttons
+document.addEventListener('click', async function(e) {
+  const editBtn = e.target.closest('.edit-opts');
+  if (editBtn) {
+    const id = editBtn.getAttribute('data-cid');
+    if (id) await editarOpcionesById(id);
+  }
+});
+</script>
 </body>
 </html><script>
 // ─── CONSTRUCTOR DE FORMULARIOS ───────────
@@ -2219,7 +2241,7 @@ async function renderConstructor() {
                     (c.opciones?.length?'<div style="font-size:10px;color:var(--blue);margin-top:2px">'+c.opciones.join(' · ')+'</div>':'') +
                   '</div>' +
                   badge(c.activo?'Activo':'Inactivo',c.activo?'ok':'gray') +
-                  (c.opciones?.length?'<button class="btn btn-sm" onclick="editarOpcionesById(\"\'+c.id+\'\"" title="Editar opciones"><i class="ti ti-list"></i></button>':'') +
+                  (c.opciones?.length?'<button class="btn btn-sm edit-opts" data-cid="'+c.id+'" title="Editar opciones"><i class="ti ti-list"></i></button>':'') +
                   '<button class="btn btn-sm" onclick="toggleCampo(\''+c.id+'\','+(!c.activo)+')" title="'+(c.activo?'Desactivar':'Activar')+'"><i class="ti ti-'+(c.activo?'eye-off':'eye')+'"></i></button>' +
                 '</div>' +
               '</div>'
@@ -2489,6 +2511,17 @@ async function crearUsuario() {
 sb.auth.onAuthStateChange(async (event, session) => {
   if (session?.user) { await startApp(session.user); }
   else { document.getElementById('login-page').style.display='flex'; document.getElementById('app').style.display='none'; }
+});
+</script>
+
+<script>
+// Event delegation for dynamically created buttons
+document.addEventListener('click', async function(e) {
+  const editBtn = e.target.closest('.edit-opts');
+  if (editBtn) {
+    const id = editBtn.getAttribute('data-cid');
+    if (id) await editarOpcionesById(id);
+  }
 });
 </script>
 </body>
