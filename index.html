@@ -157,7 +157,8 @@ async function doLogin() {
   if (!email || !pass) { showLoginError('Completa email y contraseña'); return; }
   const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
   if (error) { showLoginError('Email o contraseña incorrectos'); return; }
-  await startApp(data.user);
+  console.log('Login OK, user:', data.user?.id);
+  if (data.user) await startApp(data.user);
 }
 
 function showLoginError(msg) {
@@ -2522,8 +2523,13 @@ async function crearUsuario() {
 
 // ─── INIT ─────────────────────────────────
 sb.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) { await startApp(session.user); }
-  else { document.getElementById('login-page').style.display='flex'; document.getElementById('app').style.display='none'; }
+  console.log('Auth event:', event, 'user:', session?.user?.id);
+  if (event === 'SIGNED_IN' && session?.user) {
+    await startApp(session.user);
+  } else if (event === 'SIGNED_OUT' || (!session && event !== 'INITIAL_SESSION')) {
+    document.getElementById('login-page').style.display='flex';
+    document.getElementById('app').style.display='none';
+  }
 });
 </script>
 
