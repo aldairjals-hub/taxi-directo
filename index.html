@@ -721,48 +721,51 @@ async function verDetalleInsp(inspId) {
 async function generarPDF(inspId) {
   const {data:i} = await sb.from('inspecciones').select('*,usuarios(nombre),conductores(nombre,codigo,placa,vehiculo,flotas(nombre))').eq('id',inspId).single();
   if (!i) return;
-  // Fetch field names
-  const {data:fieldDefs} = await sb.from('formulario_campos').select('id,nombre,seccion').eq('formulario','inspeccion');
-  const fieldMap = {};
-  (fieldDefs||[]).forEach(f => fieldMap[f.id] = {nombre:f.nombre,seccion:f.seccion});
-  const rawCampos = i.campos_evaluados||{};
-  const camposMapped = {};
-  Object.entries(rawCampos).forEach(([k,v]) => {
-    const def = fieldMap[k];
-    camposMapped[def?def.nombre:k] = v;
-  });
+  const {data:fieldDefs} = await sb.from('formulario_campos').select('id,nombre').eq('formulario','inspeccion');
+  const fmap = {};
+  (fieldDefs||[]).forEach(f => fmap[f.id] = f.nombre);
+  const rawC = i.campos_evaluados||{};
+  const campos = {};
+  Object.entries(rawC).forEach(([k,v]) => { campos[fmap[k]||k] = v; });
   const cond = i.conductores;
-  const campos = camposMapped;
   const activos = i.activos_solicitados||[];
   const score = i.score_experiencia;
   const col = score>=80?'#0F6E56':score>=60?'#92400E':'#B91C1C';
+  const camposRows = Object.entries(campos).filter(([k])=>!k.startsWith('com_')).map(([k,v])=>
+    '<tr><td>'+k+'</td><td><strong>'+(Array.isArray(v)?v.join(', '):v)+'</strong></td></tr>'
+  ).join('');
+  const activosRows = activos.map(a=>
+    '<div style="color:#B91C1C;font-size:11px;padding:2px 0">• '+(a.activo||a)+(Array.isArray(a.subpartes)&&a.subpartes.length?' ('+a.subpartes.join(', ')+')':'')+'</div>'
+  ).join('');
+  const html = [
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Inspeccion '+( cond?.nombre||'')+'</title>',
+    '<style>body{font-family:Arial,sans-serif;padding:28px;color:#1E293B;font-size:12px}',
+    'h1{color:#1A56DB;font-size:19px;margin-bottom:3px}.sub{color:#94A3B8;font-size:11px}',
+    '.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #1A56DB;padding-bottom:10px;margin-bottom:14px}',
+    '.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:#F8FAFC;padding:10px;border-radius:7px;margin-bottom:14px}',
+    '.lbl{font-size:9px;font-weight:700;color:#94A3B8;text-transform:uppercase;margin-bottom:2px}.val{font-size:12px;font-weight:600}',
+    'table{width:100%;border-collapse:collapse;font-size:11px}th{background:#F1F5F9;padding:6px 9px;text-align:left;font-size:9px;color:#94A3B8;text-transform:uppercase}',
+    'td{padding:6px 9px;border-bottom:1px solid #F1F5F9}',
+    '.footer{border-top:1px solid #E2E8F0;padding-top:8px;font-size:9px;color:#94A3B8;display:flex;justify-content:space-between;margin-top:16px}',
+    '@media print{.np{display:none}}</style></head><body>',
+    '<div class="hdr"><div><h1>Taxi Directo</h1><div class="sub">Reporte de Inspección Vehicular</div></div>',
+    '<div style="text-align:right;font-size:11px;color:#94A3B8">Fecha: <strong style="color:#1E293B">'+i.fecha+'</strong><br>Tipo: <strong style="color:#1E293B">'+(i.tipo==='subsanacion'?'Subsanación':'Mensual')+'</strong></div></div>',
+    '<div class="grid">',
+    '<div><div class="lbl">Conductor</div><div class="val">'+(cond?.nombre||'—')+'</div></div>',
+    '<div><div class="lbl">Código · Placa</div><div class="val">'+(cond?.codigo||'—')+' · '+(cond?.placa||'—')+'</div></div>',
+    '<div><div class="lbl">Vehículo</div><div class="val">'+(cond?.vehiculo||'—')+'</div></div>',
+    '<div><div class="lbl">Flota</div><div class="val">'+(cond?.flotas?.nombre||'—')+'</div></div>',
+    '<div><div class="lbl">Inspector</div><div class="val">'+(i.usuarios?.nombre||'—')+'</div></div>',
+    (score?'<div style="text-align:center;border:2px solid '+col+';border-radius:6px;padding:6px"><div class="lbl">Score</div><div style="font-size:24px;font-weight:700;color:'+col+'">'+score+'%</div></div>':'<div></div>'),
+    '</div>',
+    '<table><thead><tr><th>Campo evaluado</th><th>Resultado</th></tr></thead><tbody>'+camposRows+'</tbody></table>',
+    (activos.length?'<div style="margin-top:12px;font-weight:700;font-size:11px;color:#475569;text-transform:uppercase;margin-bottom:6px">Activos solicitados</div>'+activosRows:''),
+    (i.observacion_general?'<div style="background:#F8FAFC;padding:9px;border-radius:6px;margin-top:10px;font-size:11px"><strong>Observación:</strong> '+i.observacion_general+'</div>':'test'),
+    '<div class="footer"><span>Taxi Directo</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>',
+    '<br><button onclick="window.print()" class="np" style="padding:8px 16px;background:#1A56DB;color:#fff;border:none;border-radius:6px;cursor:pointer">Imprimir / PDF</button>',
+  ].join('');
   const w = window.open('','_blank');
-  const camposRows = Object.entries(campos).filter(([k])=>!k.startsWith('com_')).map(([k,v])=>'<tr><td>'+k+'</td><td><strong>'+(Array.isArray(v)?v.join(', '):v)+'</strong></td></tr>').join('');
-  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Inspeccion '+cond?.nombre+'</title>' +
-    '<style>body{font-family:Arial,sans-serif;padding:28px;color:#1E293B;font-size:12px}' +
-    'h1{color:#1A56DB;font-size:19px;margin-bottom:3px}.sub{color:#94A3B8;font-size:11px}' +
-    '.hdr{display:flex;justify-content:space-between;border-bottom:3px solid #1A56DB;padding-bottom:10px;margin-bottom:14px}' +
-    '.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:#F8FAFC;padding:10px;border-radius:7px;margin-bottom:14px}' +
-    '.lbl{font-size:9px;font-weight:700;color:#94A3B8;text-transform:uppercase;margin-bottom:2px}.val{font-size:12px;font-weight:600}' +
-    'table{width:100%;border-collapse:collapse;font-size:11px}th{background:#F1F5F9;padding:6px 9px;text-align:left;font-size:9px;color:#94A3B8;text-transform:uppercase}' +
-    'td{padding:6px 9px;border-bottom:1px solid #F1F5F9}.footer{border-top:1px solid #E2E8F0;padding-top:8px;font-size:9px;color:#94A3B8;display:flex;justify-content:space-between;margin-top:16px}' +
-    '@media print{.no-print{display:none}}</style></head><body>' +
-    '<div class="hdr"><div><h1>Taxi Directo</h1><div class="sub">Reporte de Inspección Vehicular</div></div>' +
-    '<div style="text-align:right;font-size:11px;color:#94A3B8">Fecha: <strong style="color:#1E293B">'+i.fecha+'</strong><br>Tipo: <strong style="color:#1E293B">'+(i.tipo==='subsanacion'?'Subsanación':'Mensual')+'</strong></div></div>' +
-    '<div class="grid">' +
-      '<div><div class="lbl">Conductor</div><div class="val">'+(cond?.nombre||'—')+'</div></div>' +
-      '<div><div class="lbl">Código · Placa</div><div class="val">'+(cond?.codigo||'—')+' · '+(cond?.placa||'—')+'</div></div>' +
-      '<div><div class="lbl">Vehículo</div><div class="val">'+(cond?.vehiculo||'—')+'</div></div>' +
-      '<div><div class="lbl">Flota</div><div class="val">'+(cond?.flotas?.nombre||'—')+'</div></div>' +
-      '<div><div class="lbl">Inspector</div><div class="val">'+(i.usuarios?.nombre||'—')+'</div></div>' +
-      (score?'<div style="text-align:center;border:2px solid '+col+';border-radius:6px;padding:6px"><div class="lbl">Score experiencia</div><div style="font-size:24px;font-weight:700;color:'+col+'">'+score+'%</div></div>':'<div></div>') +
-    '</div>' +
-    '<table><thead><tr><th>Campo evaluado</th><th>Resultado</th></tr></thead><tbody>'+camposRows+'</tbody></table>' +
-    (activos.length?'<div style="margin-top:12px;font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;margin-bottom:6px">Activos solicitados</div>'+activos.map(a=>'<div style="color:#B91C1C;font-size:11px;padding:2px 0">• '+(a.activo||a)+(Array.isArray(a.subpartes)&&a.subpartes.length?' ('+a.subpartes.join(', ')+')':'')+'</div>').join(''):'') +
-    (i.observacion_general?'<div style="background:#F8FAFC;padding:9px;border-radius:6px;margin-top:10px;font-size:11px"><strong>Observación:</strong> '+i.observacion_general+'</div>':'') +
-    '<div class="footer"><span>Taxi Directo · Sistema de Gestión de Flota</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>' +
-    '<br class="no-print"><button onclick="window.print()" class="no-print" style="padding:8px 16px;background:#1A56DB;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Guardar PDF</button>' +
-</body></html>');
+  w.document.write(html);
   w.document.close();
 }
 
