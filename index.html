@@ -172,15 +172,22 @@ async function doLogout() {
 }
 
 async function startApp(user) {
-  CU = user;
-  const { data: perfil } = await sb.from('usuarios').select('*').eq('id', user.id).single();
-  CP = perfil;
-  document.getElementById('login-page').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-  document.getElementById('user-name').textContent = perfil?.nombre || user.email;
-  document.getElementById('user-role').textContent = perfil?.rol || 'usuario';
-  buildNav(perfil?.rol || 'inspector');
-  loadTab('dashboard');
+  try {
+    CU = user;
+    const { data: perfil, error: perfilErr } = await sb.from('usuarios').select('*').eq('id', user.id).single();
+    if (perfilErr) console.error('Error perfil:', perfilErr.message);
+    CP = perfil;
+    document.getElementById('login-page').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('user-name').textContent = perfil?.nombre || user.email;
+    document.getElementById('user-role').textContent = perfil?.rol || 'usuario';
+    buildNav(perfil?.rol || 'inspector');
+    loadTab('dashboard');
+  } catch(e) {
+    console.error('startApp error:', e.message);
+    document.getElementById('login-error').textContent = 'Error al iniciar: ' + e.message;
+    document.getElementById('login-error').style.display = 'block';
+  }
 }
 
 // --- NAV ----------------------------------
