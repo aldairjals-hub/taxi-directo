@@ -437,31 +437,32 @@ function buildCamposHtml(campos) {
       html += '<div style="font-size:11px;font-weight:700;color:'+col+';text-transform:uppercase;margin:14px 0 8px;padding-bottom:4px;border-bottom:2px solid '+col+'33">'+sec+'</div>';
     }
     let inp = '';
+    const dn = 'data-nombre="'+f.nombre.replace(/"/g,'&quot;')+'"';
     if (f.tipo === 'sino') {
       inp = '<div style="display:flex;gap:8px;margin-top:7px">' +
         '<label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid var(--gray-200);border-radius:7px;cursor:pointer;font-size:12px">' +
-          '<input type="radio" name="c_'+f.id+'" value="si" style="accent-color:var(--green)"> ✓ Sí</label>' +
+          '<input type="radio" name="c_'+f.id+'" value="si" '+dn+' style="accent-color:var(--green)"> ✓ Sí</label>' +
         '<label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid var(--gray-200);border-radius:7px;cursor:pointer;font-size:12px">' +
-          '<input type="radio" name="c_'+f.id+'" value="no" style="accent-color:var(--red)"> ✗ No</label>' +
+          '<input type="radio" name="c_'+f.id+'" value="no" '+dn+' style="accent-color:var(--red)"> ✗ No</label>' +
       '</div>';
     } else if (f.tipo === 'opciones') {
       const onChange = f.nombre.includes('lavado')?'onchange="checkLavado(this.value)"':f.nombre.includes('Categoría')?'onchange="checkCategoria(this.value)"':'';
-      inp = '<select name="c_'+f.id+'" style="margin-top:7px" '+onChange+'><option value="">Seleccionar...</option>' +
+      inp = '<select name="c_'+f.id+'" '+dn+' style="margin-top:7px" '+onChange+'><option value="">Seleccionar...</option>' +
         (f.opciones||[]).map(o=>'<option>'+o+'</option>').join('') + '</select>';
     } else if (f.tipo === 'multiopciones') {
       inp = '<div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:6px">' +
         (f.opciones||[]).map(o =>
           '<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;border:1.5px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:11px">' +
-          '<input type="checkbox" name="c_'+f.id+'" value="'+o+'" style="accent-color:var(--blue)"> '+o+'</label>'
+          '<input type="checkbox" name="c_'+f.id+'" value="'+o+'" '+dn+' style="accent-color:var(--blue)"> '+o+'</label>'
         ).join('') + '</div>';
     } else {
-      inp = '<input type="text" name="c_'+f.id+'" placeholder="Respuesta..." style="margin-top:7px">';
+      inp = '<input type="text" name="c_'+f.id+'" '+dn+' placeholder="Respuesta..." style="margin-top:7px">';
     }
     html += '<div style="padding:9px 0;border-bottom:1px solid var(--gray-100)">' +
       '<div style="font-size:12px;font-weight:600">'+f.nombre+(f.obligatorio?'<span style="color:var(--red);margin-left:2px;font-size:10px">*</span>':'')+'</div>' +
       inp +
       '<details style="margin-top:5px"><summary style="font-size:10px;color:var(--blue);cursor:pointer;list-style:none">+ Comentario</summary>' +
-        '<textarea rows="1" name="com_'+f.id+'" placeholder="Observación del inspector..." style="margin-top:4px;font-size:11px"></textarea>' +
+        '<textarea rows="1" name="com_'+f.id+'" data-nombre="'+f.nombre.replace(/"/g,'&quot;')+'" placeholder="Observación del inspector..." style="margin-top:4px;font-size:11px"></textarea>' +
       '</details>' +
     '</div>';
   });
@@ -510,16 +511,19 @@ async function guardarInsp() {
   const tipo = document.getElementById('insp-tipo').value;
   const obs = document.getElementById('insp-obs').value;
   const mesRef = fecha.slice(0,7);
-  // Collect campos
+  // Collect campos - store by field name using data-nombre attribute
   const camposEval = {};
   document.querySelectorAll('[name^="c_"]').forEach(el => {
-    const k = el.name.replace('c_','');
-    if (el.type==='radio' && el.checked) camposEval[k] = el.value;
-    else if (el.type==='checkbox' && el.checked) { if(!camposEval[k]) camposEval[k]=[]; camposEval[k].push(el.value); }
-    else if (el.tagName==='SELECT' && el.value) camposEval[k] = el.value;
-    else if (el.tagName==='INPUT' && el.type==='text' && el.value) camposEval[k] = el.value;
+    const nombre = el.getAttribute('data-nombre') || el.name.replace('c_','');
+    if (el.type==='radio' && el.checked) camposEval[nombre] = el.value;
+    else if (el.type==='checkbox' && el.checked) { if(!camposEval[nombre]) camposEval[nombre]=[]; camposEval[nombre].push(el.value); }
+    else if (el.tagName==='SELECT' && el.value) camposEval[nombre] = el.value;
+    else if (el.tagName==='INPUT' && el.type==='text' && el.value) camposEval[nombre] = el.value;
   });
-  document.querySelectorAll('[name^="com_"]').forEach(el => { if(el.value) camposEval['com_'+el.name.replace('com_','')]=el.value; });
+  document.querySelectorAll('[name^="com_"]').forEach(el => { 
+    const nombre = el.getAttribute('data-nombre');
+    if(el.value && nombre) camposEval['Comentario — '+nombre]=el.value; 
+  });
   // Collect activos
   const activos = [];
   document.querySelectorAll('[name="activo"]:checked').forEach(el => {
@@ -676,7 +680,18 @@ async function verHistorial(id) {
 async function verDetalleInsp(inspId) {
   const {data:i} = await sb.from('inspecciones').select('*,usuarios(nombre),conductores(nombre,codigo,placa,vehiculo,flotas(nombre))').eq('id',inspId).single();
   if (!i) return;
-  const campos = i.campos_evaluados||{};
+  // Fetch field names to map UUIDs
+  const {data:fieldDefs} = await sb.from('formulario_campos').select('id,nombre,seccion').eq('formulario','inspeccion');
+  const fieldMap = {};
+  (fieldDefs||[]).forEach(f => fieldMap[f.id] = {nombre:f.nombre,seccion:f.seccion});
+  // Map UUID keys to field names
+  const rawCampos = i.campos_evaluados||{};
+  const campos = {};
+  Object.entries(rawCampos).forEach(([k,v]) => {
+    const def = fieldMap[k];
+    const nombre = def ? def.nombre : k;
+    campos[nombre] = v;
+  });
   const activos = i.activos_solicitados||[];
   const score = i.score_experiencia;
   const col = score>=80?'var(--green)':score>=60?'var(--amber)':'var(--red)';
@@ -706,8 +721,18 @@ async function verDetalleInsp(inspId) {
 async function generarPDF(inspId) {
   const {data:i} = await sb.from('inspecciones').select('*,usuarios(nombre),conductores(nombre,codigo,placa,vehiculo,flotas(nombre))').eq('id',inspId).single();
   if (!i) return;
+  // Fetch field names
+  const {data:fieldDefs} = await sb.from('formulario_campos').select('id,nombre,seccion').eq('formulario','inspeccion');
+  const fieldMap = {};
+  (fieldDefs||[]).forEach(f => fieldMap[f.id] = {nombre:f.nombre,seccion:f.seccion});
+  const rawCampos = i.campos_evaluados||{};
+  const camposMapped = {};
+  Object.entries(rawCampos).forEach(([k,v]) => {
+    const def = fieldMap[k];
+    camposMapped[def?def.nombre:k] = v;
+  });
   const cond = i.conductores;
-  const campos = i.campos_evaluados||{};
+  const campos = camposMapped;
   const activos = i.activos_solicitados||[];
   const score = i.score_experiencia;
   const col = score>=80?'#0F6E56':score>=60?'#92400E':'#B91C1C';
