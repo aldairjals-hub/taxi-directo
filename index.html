@@ -769,7 +769,8 @@ async function generarPDF(inspId) {
 <script>
 // --- BLOQUEOS -----------------------------
 async function renderBloqueos() {
-  const {data} = await sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
+  const {data, error} = await sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
+  if (error) { document.getElementById('main-content').innerHTML = '<div class="card"><div class="alert alert-danger"><div class="at">Error cargando bloqueos: '+error.message+'</div></div></div>'; return; }
   const hoy = new Date();
   const vencen = (data||[]).filter(b => b.tipo==='incidencia' && b.fecha_reactivacion && new Date(b.fecha_reactivacion)<=hoy && b.confirmado);
   let html = '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Bloqueos y suspensiones</h2>';
@@ -1326,7 +1327,8 @@ async function exportarActivos(){
 <script>
 // --- BLOQUEOS -----------------------------
 async function renderBloqueos() {
-  const {data} = await sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
+  const {data, error} = await sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
+  if (error) { document.getElementById('main-content').innerHTML = '<div class="card"><div class="alert alert-danger"><div class="at">Error cargando bloqueos: '+error.message+'</div></div></div>'; return; }
   const hoy = new Date();
   const vencenHoy = (data||[]).filter(b => b.tipo==='incidencia' && b.fecha_reactivacion && new Date(b.fecha_reactivacion)<=hoy && b.confirmado);
 
@@ -1431,15 +1433,20 @@ async function guardarBloqueo() {
   if (!motivo) { alert('Selecciona el motivo'); return; }
   if (!detalle) { alert('Escribe el detalle'); return; }
   const tipo = motivo==='mal_estado' ? 'inspeccion' : 'incidencia';
-  const {error} = await sb.from('bloqueos').insert({
+  const blqData = {
     conductor_id: _nbCondId, tipo, confirmado: true,
     fecha_bloqueo: new Date().toISOString().slice(0,10),
     inspector_bloqueo: CP?.nombre||'Admin',
     dias_suspension: window._nbDias||0,
     fecha_reactivacion: window._nbFechaReact||null,
-    mes_referencia: new Date().toISOString().slice(0,7),
-    detalle
-  });
+    mes_referencia: new Date().toISOString().slice(0,7)
+  };
+  // Try with detalle, fallback without
+  let {error} = await sb.from('bloqueos').insert({...blqData, detalle});
+  if (error?.message?.includes('detalle')) {
+    const r2 = await sb.from('bloqueos').insert(blqData);
+    error = r2.error;
+  }
   if (error) { alert('Error: '+error.message); return; }
   document.getElementById('nb-ok').style.display = 'block';
   _nbCondId = null;
@@ -1460,7 +1467,8 @@ async function reactivar(id, nombre) {
 
 // --- COMPROMISOS --------------------------
 async function renderCompromisos() {
-  const {data} = await sb.from('compromisos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').order('fecha_limite');
+  const {data, error: errComp} = await sb.from('compromisos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').order('fecha_limite');
+  if (errComp) { document.getElementById('main-content').innerHTML = '<div class="card"><div class="alert alert-danger"><div class="at">Error cargando compromisos: '+errComp.message+'</div></div></div>'; return; }
   const hoy = new Date();
   const urgentes = (data||[]).filter(c => c.estado!=='resuelto' && Math.round((new Date(c.fecha_limite)-hoy)/864e5)<=3).length;
   let html = '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Compromisos vehiculares</h2>';
@@ -1649,7 +1657,7 @@ async function renderConstructor(){
               (c.tipo==='opciones'&&c.opciones?.length?'<div style="font-size:10px;color:var(--blue);margin-top:2px">'+c.opciones.join(' · ')+'</div>':'') +
             '</div>' +
             badge(c.activo?'Activo':'Inactivo',c.activo?'ok':'gray') +
-            (c.tipo==='opciones'||c.tipo==='multiopciones'?'<button class="btn btn-sm" onclick="editarOpciones(\''+c.id+'\',\''+JSON.stringify(c.opciones||[]).replace(/'/g,'&#39;')+'\')"><i class="ti ti-list"></i></button>':'') +
+            (c.tipo==='opciones'||c.tipo==='multiopciones'?'<button class="btn btn-sm" onclick="editarOpcionesById(\"\'+c.id+\'\"" title="Editar opciones"><i class="ti ti-list"></i></button>':'') +
             '<button class="btn btn-sm" onclick="toggleCampo(\''+c.id+'\','+(!c.activo)+')"><i class="ti ti-'+(c.activo?'eye-off':'eye')+'"></i></button>' +
           '</div>' +
         '</div>';
@@ -1797,7 +1805,8 @@ async function parsearPadron(){
     const data=rows.slice(1).map(r=>{const cols=r.split(',');const obj={};headers.forEach((h,i)=>{obj[h]=(cols[i]||'').trim().replace(/"/g,'');});return obj;}).filter(r=>r.codigo||r.nombre);
     el.innerHTML='<div class="alert alert-info" style="margin-bottom:10px"><div class="at"><i class="ti ti-file-check"></i> '+data.length+' conductores detectados</div></div>'+
       '<div style="font-size:11px;color:var(--gray-600);margin-bottom:10px">Primeras 3 filas: '+data.slice(0,3).map(r=>r.nombre||r.codigo).join(', ')+'...</div>'+
-      '<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron('+JSON.stringify(data).replace(/"/g,\'&quot;\')+')"><i class="ti ti-upload"></i> Confirmar carga</button><button class="btn" onclick="renderPadron()">Cancelar</button></div>';
+      window._padronRows2=data;
+      el.innerHTML+='<div style="margin-top:8px;display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows2)"><i class="ti ti-upload"></i> Confirmar carga (' +data.length+' conductores)</button><button class="btn" onclick="renderPadron()">Cancelar</button></div>';
   }catch(e){el.innerHTML='<div class="alert alert-warn"><div class="at">Error al leer el archivo. Asegúrate que sea CSV o Excel guardado como CSV.</div></div>';}
 }
 
@@ -2210,7 +2219,7 @@ async function renderConstructor() {
                     (c.opciones?.length?'<div style="font-size:10px;color:var(--blue);margin-top:2px">'+c.opciones.join(' · ')+'</div>':'') +
                   '</div>' +
                   badge(c.activo?'Activo':'Inactivo',c.activo?'ok':'gray') +
-                  (c.opciones?.length?'<button class="btn btn-sm" onclick="editarOpciones(\''+c.id+'\','+JSON.stringify(c.opciones).replace(/'/g,"\\'")+')" title="Editar opciones"><i class="ti ti-list"></i></button>':'') +
+                  (c.opciones?.length?'<button class="btn btn-sm" onclick="editarOpcionesById(\"\'+c.id+\'\"" title="Editar opciones"><i class="ti ti-list"></i></button>':'') +
                   '<button class="btn btn-sm" onclick="toggleCampo(\''+c.id+'\','+(!c.activo)+')" title="'+(c.activo?'Desactivar':'Activar')+'"><i class="ti ti-'+(c.activo?'eye-off':'eye')+'"></i></button>' +
                 '</div>' +
               '</div>'
@@ -2238,9 +2247,19 @@ async function agregarCampo(formulario) {
   renderConstructor();
 }
 
+async function editarOpcionesById(id) {
+  const {data:campo} = await sb.from('formulario_campos').select('nombre,opciones').eq('id',id).single();
+  if (!campo) return;
+  const actual = (campo.opciones||[]).join(', ');
+  const nuevo = prompt('Editar opciones de "'+campo.nombre+'"\nSepara con comas:\n',actual);
+  if (nuevo===null) return;
+  const opciones = nuevo.split(',').map(o=>o.trim()).filter(Boolean);
+  await sb.from('formulario_campos').update({opciones}).eq('id',id);
+  renderConstructor();
+}
 async function editarOpciones(id, opcionesActuales) {
   const actual = (opcionesActuales||[]).join(', ');
-  const nuevo = prompt('Edita las opciones separadas por coma:\n(Actuales: '+actual+')',actual);
+  const nuevo = prompt('Editar opciones (separa con comas):',actual);
   if (nuevo===null) return;
   const opciones = nuevo.split(',').map(o=>o.trim()).filter(Boolean);
   await sb.from('formulario_campos').update({opciones}).eq('id',id);
@@ -2382,9 +2401,12 @@ async function procesarPadron() {
         categoria: obj.categoria||obj['categoría']||''
       };
     }).filter(r=>r.codigo&&r.nombre);
+    // Store rows in window variable to avoid inline JSON issues
+    window._padronRows = rows;
     document.getElementById('padron-preview').innerHTML =
       '<div class="alert alert-info"><div class="at"><i class="ti ti-file-check"></i> '+rows.length+' conductores detectados</div></div>' +
-      '<button class="btn btn-primary" onclick="subirPadron('+JSON.stringify(rows).replace(/"/g,'&quot;')+')"><i class="ti ti-upload"></i> Confirmar carga</button>';
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows)"><i class="ti ti-upload"></i> Confirmar carga ('+rows.length+')</button>' +
+      '<button class="btn" onclick="renderPadron()">Cancelar</button></div>';
   };
   reader.readAsText(file,'UTF-8');
 }
