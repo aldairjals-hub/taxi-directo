@@ -920,7 +920,7 @@ async function renderCompromisos() {
 
 function filtrarCompromisos() {
   const q=(document.getElementById('bus-comp')?.value||'').toLowerCase();
-  const fil=(window._compData||[]).filter(c=>!q||c.titulo?.toLowerCase().includes(q)||(c.conductor||c.conductores)?.nombre?.toLowerCase().includes(q));
+  const fil=(window._compData||[]).filter(c=>!q||c.titulo?.toLowerCase().includes(q)||c._cond?.nombre?.toLowerCase().includes(q));
   document.getElementById('cnt-comp').textContent=fil.length+' registros';
   renderCompList(fil);
 }
@@ -941,7 +941,7 @@ function renderCompList(data) {
     return '<div class="card" style="'+(urgente?'border-color:#FCD34D;':'')+'">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">' +
         '<div><div style="font-size:13px;font-weight:700">'+c.titulo+'</div>' +
-          '<div style="font-size:11px;color:var(--gray-600);margin-top:3px">'+((c.conductor||c.conductores)?.nombre||'—')+' · '+((c.conductor||c.conductores)?.codigo||'—')+' · '+badge(((c.conductor||c.conductores)?.flotas||(c.conductor||c.conductores)?.flota)?.nombre||'—','info')+'</div>' +
+          '<div style="font-size:11px;color:var(--gray-600);margin-top:3px">'+(c._cond?.nombre||'—')+' · '+(c._cond?.codigo||'—')+' · '+badge(c._cond?.flotas?.nombre||'—','info')+'</div>' +
           (c.descripcion?'<div style="font-size:11px;color:var(--gray-600);margin-top:4px">'+c.descripcion+'</div>':'') +
         '</div>'+badge(badgeTxt,badgeCls)+
       '</div>' +
@@ -1476,8 +1476,16 @@ async function reactivar(id, nombre) {
 
 // --- COMPROMISOS --------------------------
 async function renderCompromisos() {
-  const {data, error: errComp} = await sb.from('compromisos').select('*,conductor:conductores!compromisos_conductor_id_fkey(codigo,nombre,placa,vehiculo,flota:flotas(nombre))').order('fecha_limite');
+  const {data, error: errComp} = await sb.from('compromisos').select('*').order('fecha_limite');
   if (errComp) { document.getElementById('main-content').innerHTML = '<div class="card"><div class="alert alert-danger"><div class="at">Error cargando compromisos: '+errComp.message+'</div></div></div>'; return; }
+  // Fetch conductor data separately to avoid ambiguous FK issue
+  if (data?.length) {
+    const condIds = [...new Set(data.map(c=>c.conductor_id).filter(Boolean))];
+    const {data:conds} = await sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,flotas(nombre)').in('id',condIds);
+    const condMap = {};
+    (conds||[]).forEach(c => condMap[c.id] = c);
+    data.forEach(c => { c._cond = condMap[c.conductor_id]||null; });
+  }
   const hoy = new Date();
   const urgentes = (data||[]).filter(c => c.estado!=='resuelto' && Math.round((new Date(c.fecha_limite)-hoy)/864e5)<=3).length;
   let html = '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Compromisos vehiculares</h2>';
@@ -1492,7 +1500,7 @@ async function renderCompromisos() {
 
 function filtrarComp() {
   const q = (document.getElementById('bus-comp')?.value||'').toLowerCase();
-  const fil = window._compData.filter(c => !q || [(c.conductor||c.conductores)?.nombre,(c.conductor||c.conductores)?.codigo,c.titulo,c.descripcion].some(f=>f?.toLowerCase().includes(q)));
+  const fil = window._compData.filter(c => !q || [c._cond?.nombre,c._cond?.codigo,c.titulo,c.descripcion].some(f=>f?.toLowerCase().includes(q)));
   document.getElementById('cnt-comp').textContent = fil.length+' registros';
   renderCompList(fil);
 }
@@ -1514,8 +1522,8 @@ function renderCompList(data) {
     return '<div class="card" style="'+(dias<=3&&c.estado!=='resuelto'?'border-color:#FCD34D;':'')+'">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">' +
         '<div><div style="font-size:13px;font-weight:700">'+(c.titulo||'Sin título')+'</div>' +
-        '<div style="font-size:11px;color:var(--gray-600);margin-top:3px">'+((c.conductor||c.conductores)?.nombre||'—')+' · '+((c.conductor||c.conductores)?.codigo||'—')+' · '+badge(((c.conductor||c.conductores)?.flotas||(c.conductor||c.conductores)?.flota)?.nombre||'—','info')+'</div>' +
-        ((c.conductor||c.conductores)?.placa?'<div style="font-size:10px;color:var(--gray-400);margin-top:2px">Placa: '+c.conductores.placa+' · '+( c.conductores.vehiculo||'—')+'</div>':'') +
+        '<div style="font-size:11px;color:var(--gray-600);margin-top:3px">'+(c._cond?.nombre||'—')+' · '+(c._cond?.codigo||'—')+' · '+badge(c._cond?.flotas?.nombre||'—','info')+'</div>' +
+        (c._cond?.placa?'<div style="font-size:10px;color:var(--gray-400);margin-top:2px">Placa: '+c.conductores.placa+' · '+( c.conductores.vehiculo||'—')+'</div>':'') +
         (c.descripcion?'<div style="font-size:11px;color:var(--gray-600);margin-top:4px">'+c.descripcion+'</div>':'') +
         '</div>' + badge(badgeTxt,badgeCls) +
       '</div>' +
@@ -2438,7 +2446,7 @@ async function subirPadron(rows) {
   if (placas.length) {
     const {data:conflicts} = await sb.from('compromisos').select('placa_vehiculo,conductores(nombre,codigo,estado)').in('placa_vehiculo',placas).eq('estado','pendiente');
     const confByPlaca = {};
-    (conflicts||[]).forEach(c=>{if(c.conductores?.estado==='desactivado'){if(!confByPlaca[c.placa_vehiculo])confByPlaca[c.placa_vehiculo]=[];confByPlaca[c.placa_vehiculo].push((c.conductor||c.conductores)?.nombre);}});
+    (conflicts||[]).forEach(c=>{if(c.conductores?.estado==='desactivado'){if(!confByPlaca[c.placa_vehiculo])confByPlaca[c.placa_vehiculo]=[];confByPlaca[c.placa_vehiculo].push(c._cond?.nombre);}});
     if (Object.keys(confByPlaca).length) {
       let msg = '⚠ Placas con compromisos pendientes de conductores anteriores:\n\n';
       Object.entries(confByPlaca).forEach(([pl,nms])=>{msg+=pl+': '+nms.join(', ')+'\n';});
