@@ -767,7 +767,7 @@ async function generarPDF(inspId) {
     (i.observacion_general?'<div style="background:#F8FAFC;padding:9px;border-radius:6px;margin-top:10px;font-size:11px"><strong>Observación:</strong> '+i.observacion_general+'</div>':'') +
     '<div class="footer"><span>Taxi Directo · Sistema de Gestión de Flota</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>' +
     '<br class="no-print"><button onclick="window.print()" class="no-print" style="padding:8px 16px;background:#1A56DB;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Guardar PDF</button>' +
-</body></html>');
+    '</body></html>');
   w.document.close();
 }
 
@@ -776,9 +776,6 @@ document.addEventListener('click', async function(e){
   const b=e.target.closest('.edit-opts');
   if(b){const id=b.getAttribute('data-cid');if(id)await editarOpcionesById(id);}
 });
-</script>
-<script>
-// --- BLOQUEOS -----------------------------
 <script>
 // --- BLOQUEOS -----------------------------
 async function renderBloqueos() {
