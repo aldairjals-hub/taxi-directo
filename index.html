@@ -1469,14 +1469,18 @@ async function parsearPadron(){
       }).filter(r=>r.codigo && r.nombre);
     } else {
       const text = await file.text();
-      const rows = text.split('\n').filter(r=>r.trim());
-      const headers = rows[0].split(',').map(h=>h.trim().toLowerCase()
+      // Eliminar BOM si existe
+      const clean = text.replace(/^\uFEFF/, '');
+      const rows = clean.split(/\r?\n/).filter(r=>r.trim());
+      // Detectar separador: punto y coma o coma
+      const sep = rows[0].includes(';') ? ';' : ',';
+      const headers = rows[0].split(sep).map(h=>h.trim().toLowerCase()
         .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
         .replace(/[^a-z]/g,''));
       data = rows.slice(1).map(r=>{
-        const cols = r.split(',');
+        const cols = r.split(sep);
         const obj = {};
-        headers.forEach((h,i) => obj[h] = (cols[i]||'').trim().replace(/"/g,''));
+        headers.forEach((h,i) => obj[h] = (cols[i]||'').trim().replace(/"/g,'').replace(/\r/g,''));
         return obj;
       }).filter(r => r.codigo && r.nombre);
     }
