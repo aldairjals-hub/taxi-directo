@@ -1908,8 +1908,7 @@ function exportarReporteXlsx(){
       });
       if(insp.score_experiencia!=null) score=insp.score_experiencia+'%';
     }
-    return {Código:c.codigo,Conductor:c.nombre,Flota:c.flotas?.nombre||'',Vehículo:c.vehiculo||'',Placa:c.placa||'',Categoría:c.categoria||'',Estado:c.estado,'Inspección '+mes:insp?'Si':'No',Combustible:comb,Score:score};
-  });
+ return {'Codigo':c.codigo,'Conductor':c.nombre,'Flota':c.flotas?.nombre||'','Vehiculo':c.vehiculo||'','Placa':c.placa||'','Categoria':c.categoria||'','Estado':c.estado,['Inspeccion_'+mes]:insp?'Si':'No','Combustible':comb,'Score':score};
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Reporte',ws);
