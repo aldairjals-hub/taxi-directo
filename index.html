@@ -1407,13 +1407,18 @@ function exportarReporteXlsx(){
     row['Score'] = String(score||'');
     return row;
   });
-  // Convertir a array of arrays para evitar problemas con json_to_sheet
-  const headers = Object.keys(rows[0]||{});
-  const aoa = [headers, ...rows.map(r=>headers.map(h=>r[h]||''))];
+  if(!rows.length){alert('Sin datos para exportar');return;}
+  const headers = Object.keys(rows[0]);
+  const aoa = [headers, ...rows.map(r=>headers.map(h=>{ const v=r[h]; return (v===null||v===undefined)?'':v; }))];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Reporte',ws);
-  XLSX.writeFile(wb,'reporte_'+mes+'.xlsx');
+  const wbout = XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const blob = new Blob([wbout],{type:'application/octet-stream'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download='reporte_'+mes+'.xlsx'; a.click();
+  URL.revokeObjectURL(url);
 }
 
 // --- PADRÓN -------------------------------
@@ -1850,12 +1855,17 @@ async function exportarActivos() {
     r['Estado'] = 'Pendiente notificar area';
     return r;
   });
-  const headers2 = Object.keys(rows[0]||{});
-  const aoa2 = [headers2, ...rows.map(r=>headers2.map(h=>r[h]===undefined?'':r[h]))];
-  const ws = XLSX.utils.aoa_to_sheet(aoa2);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,'Activos pendientes',ws);
-  XLSX.writeFile(wb,'activos_pendientes_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  const headers2 = Object.keys(rows[0]);
+  const aoa2 = [headers2, ...rows.map(r=>headers2.map(h=>{ const v=r[h]; return (v===null||v===undefined)?'':v; }))];
+  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+  const wb2 = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb2,'Activos pendientes',ws2);
+  const wbout2 = XLSX.write(wb2,{bookType:'xlsx',type:'array'});
+  const blob2 = new Blob([wbout2],{type:'application/octet-stream'});
+  const url2 = URL.createObjectURL(blob2);
+  const a2 = document.createElement('a');
+  a2.href=url2; a2.download='activos_pendientes_'+new Date().toISOString().slice(0,10)+'.xlsx'; a2.click();
+  URL.revokeObjectURL(url2);
 }
 </script>
 
