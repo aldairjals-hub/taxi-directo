@@ -1451,45 +1451,42 @@ async function renderPadron(){
 }
 
 async function parsearPadron(){
-  const file=document.getElementById('padron-file').files[0];if(!file)return;
-  const el=document.getElementById('padron-preview');
-  el.innerHTML='<div class="loader">Procesando archivo...</div>';
-  try{
-    const isXlsx = file.name.endsWith('.xlsx')||file.name.endsWith('.xls');
-    let data=[];
+  const file = document.getElementById('padron-file').files[0];
+  if(!file) return;
+  const el = document.getElementById('padron-preview');
+  el.innerHTML = '<div class="loader">Procesando archivo...</div>';
+  try {
+    const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+    let data = [];
     if(isXlsx){
       const buf = await file.arrayBuffer();
-      const wb2 = XLSX.read(buf, {type:'array'});
-      const ws2 = wb2.Sheets[wb2.SheetNames[0]];
-      const raw2 = XLSX.utils.sheet_to_json(ws2, {defval:'', raw:false});
-      // Normalizar headers a minúsculas
-      const raw = raw2.map(r=>{
-        const obj={};
-        Object.entries(r).forEach(([k,v])=>{
-          const key = k.toLowerCase().trim()
-            .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i')
-            .replace(/ó/g,'o').replace(/ú/g,'u').replace(/[^a-z]/g,'');
-          obj[key] = String(v||'').trim();
-        });
-        return obj;
-      }).filter(r=>r.codigo&&r.nombre);
-      // Normalizar headers
+      const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, {defval:'', raw:false});
       data = raw.map(r=>{
-        const obj={};
-        Object.entries(r).forEach(([k,v])=>{ obj[k.toLowerCase().trim().replace(/[áa]/g,'a').replace(/[éeè]/g,'e').replace(/[íi]/g,'i').replace(/[óo]/g,'o').replace(/[úu]/g,'u').replace(/[^a-z]/g,'')]=(v||'').toString().trim(); });
-        return obj;
-      }).filter(r=>r.codigo&&r.nombre);
+        const n = (k) => String(r[k]||r[k.charAt(0).toUpperCase()+k.slice(1)]||'').trim();
+        return {codigo:n('codigo'), nombre:n('nombre'), vehiculo:n('vehiculo'), placa:n('placa'), flota:n('flota'), estado:n('estado')||'activo', categoria:n('categoria')};
+      }).filter(r=>r.codigo && r.nombre);
     } else {
-      const text=await file.text();
-      const rows=text.split('\n').filter(r=>r.trim());
-      const headers=rows[0].split(',').map(h=>h.trim().toLowerCase().replace(/[áa]/g,'a').replace(/[éeè]/g,'e').replace(/[íi]/g,'i').replace(/[óo]/g,'o').replace(/[úu]/g,'u').replace(/[^a-z]/g,''));
-      data=rows.slice(1).map(r=>{const cols=r.split(',');const obj={};headers.forEach((h,i)=>{obj[h]=(cols[i]||'').trim().replace(/"/g,'');});return obj;}).filter(r=>r.codigo&&r.nombre);
+      const text = await file.text();
+      const rows = text.split('\n').filter(r=>r.trim());
+      const headers = rows[0].split(',').map(h=>h.trim().toLowerCase()
+        .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+        .replace(/[^a-z]/g,''));
+      data = rows.slice(1).map(r=>{
+        const cols = r.split(',');
+        const obj = {};
+        headers.forEach((h,i) => obj[h] = (cols[i]||'').trim().replace(/"/g,''));
+        return obj;
+      }).filter(r => r.codigo && r.nombre);
     }
-    window._padronRows2=data;
-    el.innerHTML='<div class="alert alert-info" style="margin-bottom:10px"><div class="at"><i class="ti ti-file-check"></i> '+data.length+' conductores detectados en el archivo</div></div>'+
-      '<div style="font-size:11px;color:var(--gray-600);margin-bottom:10px">Vista previa (primeros 3): '+data.slice(0,3).map(r=>r.nombre+' ('+r.codigo+') — '+r.estado).join(', ')+'</div>'+
+    window._padronRows2 = data;
+    el.innerHTML = '<div class="alert alert-info" style="margin-bottom:10px"><div class="at"><i class="ti ti-file-check"></i> '+data.length+' conductores detectados</div></div>'+
+      '<div style="font-size:11px;color:var(--gray-600);margin-bottom:10px">Vista previa: '+data.slice(0,3).map(r=>r.nombre+' ('+r.codigo+')').join(', ')+'</div>'+
       '<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows2)"><i class="ti ti-upload"></i> Confirmar carga ('+data.length+' conductores)</button><button class="btn" onclick="renderPadron()">Cancelar</button></div>';
-  }catch(e){el.innerHTML='<div class="alert alert-danger"><div class="at">Error al leer el archivo: '+e.message+'</div></div>';}
+  } catch(e) {
+    el.innerHTML = '<div class="alert alert-danger"><div class="at">Error: '+e.message+'</div></div>';
+  }
 }
 
 async function subirPadron(rows){
