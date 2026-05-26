@@ -1321,7 +1321,6 @@ function aplicarFiltros(){
   const combFiltro = document.getElementById('f-comb')?.value||'';
   const cabFiltro = document.getElementById('f-cab')?.value||'';
   const busq = (document.getElementById('f-busq')?.value||'').toLowerCase();
-  const fieldDefs = window._reporteFieldDefs||{};
   let data = window._reporteData||[];
   if(cat) data=data.filter(c=>c.categoria===cat);
   if(est) data=data.filter(c=>c.estado===est);
@@ -1332,7 +1331,7 @@ function aplicarFiltros(){
     const insp=window._reporteUltimaMes?.[c.id];
     if(!insp?.campos_evaluados) return false;
     return Object.entries(insp.campos_evaluados).some(([k,v])=>{
-      const nombre=(fieldDefs[k]||k).toLowerCase();
+      const nombre=(window._reporteFieldDefs[k]||k).toLowerCase();
       const val=Array.isArray(v)?v.join(', '):String(v);
       return nombre.includes('combustible')&&val===combFiltro;
     });
@@ -1341,7 +1340,7 @@ function aplicarFiltros(){
     const insp=window._reporteUltimaMes?.[c.id];
     if(!insp?.campos_evaluados) return false;
     return Object.entries(insp.campos_evaluados).some(([k,v])=>{
-      const nombre=(fieldDefs[k]||k).toLowerCase();
+      const nombre=(window._reporteFieldDefs[k]||k).toLowerCase();
       const val=Array.isArray(v)?v.join(', '):String(v);
       return nombre.includes('cabecera')&&val===cabFiltro;
     });
