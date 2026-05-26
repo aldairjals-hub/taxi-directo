@@ -1371,7 +1371,7 @@ function aplicarFiltros(){
   }).join('');
 }
 
-function exportarReporteXlsx(){
+async function exportarReporteXlsx(){
   let data = window._reporteData||[];
   const cat=document.getElementById('f-cat')?.value; const est=document.getElementById('f-estado')?.value;
   const flota=document.getElementById('f-flota')?.value; const busq=(document.getElementById('f-busq')?.value||'').toLowerCase();
