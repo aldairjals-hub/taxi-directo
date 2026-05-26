@@ -1464,8 +1464,17 @@ async function parsearPadron(){
       const raw2 = [];
       const hdrs2 = [];
       ws2.eachRow((row,ri)=>{
-        if(ri===1){row.values.slice(1).forEach(h=>hdrs2.push(String(h||'')));}
-        else{const obj={};row.values.slice(1).forEach((v,i)=>{obj[hdrs2[i]]=String(v===null||v===undefined?'':v);});raw2.push(obj);}
+        // ExcelJS row.values[0] es undefined, data empieza en [1]
+        const vals = Array.from({length: row.cellCount}, (_,i) => {
+          const cell = row.getCell(i+1);
+          return cell.value===null||cell.value===undefined?'':String(cell.value);
+        });
+        if(ri===1){ vals.forEach(h=>hdrs2.push(h.toLowerCase().trim())); }
+        else{
+          const obj={};
+          vals.forEach((v,i)=>{ if(hdrs2[i]) obj[hdrs2[i]]=v; });
+          if(obj.codigo||obj.nombre) raw2.push(obj);
+        }
       });
       const raw = raw2;
       // Normalizar headers
