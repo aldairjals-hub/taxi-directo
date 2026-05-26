@@ -173,21 +173,20 @@ async function doLogout() {
 }
 
 async function startApp(user) {
+  CU = user;
+  CP = null;
   try {
-    CU = user;
-    const { data: perfil, error: perfilErr } = await sb.from('usuarios').select('*').eq('id', user.id).single();
-    if (perfilErr) console.warn('Perfil no encontrado, usando datos básicos:', perfilErr.message);
+    const { data: perfil } = await sb.from('usuarios').select('*').eq('id', user.id).single();
     CP = perfil;
-    document.getElementById('login-page').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
-    document.getElementById('user-name').textContent = perfil?.nombre || user.email;
-    document.getElementById('user-role').textContent = perfil?.rol || 'usuario';
-    buildNav(perfil?.rol || 'inspector');
-    loadTab('dashboard');
   } catch(e) {
-    console.error('Error en startApp:', e);
-    showLoginError('Error al iniciar la app: ' + e.message);
+    console.warn('No se pudo cargar perfil:', e.message);
   }
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('user-name').textContent = CP?.nombre || user.email;
+  document.getElementById('user-role').textContent = CP?.rol || 'usuario';
+  buildNav(CP?.rol || 'inspector');
+  loadTab('dashboard');
 }
 
 // --- NAV ----------------------------------
@@ -2014,10 +2013,9 @@ async function renderUsuarios(){
 }
 
 // --- INIT ---------------------------------
-let _appStarted = false;
 (async()=>{
   const{data:{session}}=await sb.auth.getSession();
-  if(session){ _appStarted=true; await startApp(session.user); }
+  if(session){ await startApp(session.user); }
   else{ document.getElementById('login-page').style.display='flex'; }
 })();
 </script>
@@ -2679,8 +2677,10 @@ async function crearUsuario() {
 
 // ─── INIT ─────────────────────────────────
 sb.auth.onAuthStateChange(async (event, session) => {
-  if (event==='SIGNED_IN' && !_appStarted) { _appStarted=true; await startApp(session.user); }
-  else if (event==='SIGNED_OUT') { _appStarted=false; document.getElementById('app').style.display='none'; document.getElementById('login-page').style.display='flex'; }
+  if (event==='SIGNED_OUT') {
+    document.getElementById('app').style.display='none';
+    document.getElementById('login-page').style.display='flex';
+  }
 });
 </script>
 
