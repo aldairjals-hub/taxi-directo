@@ -1293,7 +1293,7 @@ async function renderReportes(){
   // Tabla con filtros
   html += '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
     '<div class="card-title" style="margin-bottom:0">Listado conductores — '+mesSeleccionado+'</div>' +
-    '<button class="btn btn-sm btn-primary" onclick="exportarReporteXlsx()"><i class="ti ti-download"></i> Exportar Excel</button>' +
+    '<button class="btn btn-sm btn-primary" onclick="exportarReporteXlsx()"><i class="ti ti-download"></i> Exportar CSV</button>' +
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
   html += '<select id="f-cat" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todas las categorías</option><option value="lite">Lite</option><option value="comfort">Comfort</option><option value="comfort_xl">Comfort XL</option><option value="xl">XL</option><option value="van">Van</option></select>';
@@ -1409,15 +1409,14 @@ function exportarReporteXlsx(){
   });
   if(!rows.length){alert('Sin datos para exportar');return;}
   const headers = Object.keys(rows[0]);
-  const aoa = [headers, ...rows.map(r=>headers.map(h=>{ const v=r[h]; return (v===null||v===undefined)?'':v; }))];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,'Reporte',ws);
-  const wbout = XLSX.write(wb,{bookType:'xlsx',type:'array'});
-  const blob = new Blob([wbout],{type:'application/octet-stream'});
+  const csvRows = [headers.join(','), ...rows.map(r=>headers.map(h=>{
+    const v = r[h]===null||r[h]===undefined?'':String(r[h]);
+    return '"'+v.replace(/"/g,'""')+'"';
+  }).join(','))];
+  const blob = new Blob(['\uFEFF'+csvRows.join('\n')],{type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href=url; a.download='reporte_'+mes+'.xlsx'; a.click();
+  a.href=url; a.download='reporte_'+mes+'.csv'; a.click();
   URL.revokeObjectURL(url);
 }
 
@@ -1839,33 +1838,26 @@ async function guardarPasos(id) {
 async function exportarActivos() {
   const {data} = await sb.from('solicitudes_activos').select('*,conductores(codigo,nombre,flotas(nombre)),usuarios(nombre)').order('created_at',{ascending:false});
   if (!data?.length) { alert('Sin datos para exportar'); return; }
-  // Solo pendientes de paso 1 (no notificados al área aún)
   const pendientes = data.filter(a => a.fecha_paso1 && !a.fecha_paso2);
   if (!pendientes.length) { alert('No hay activos pendientes de notificar al área'); return; }
-  const rows = pendientes.map(a => {
-    const r = {};
-    r['Conductor'] = String(a.conductores?.nombre||'');
-    r['Codigo'] = String(a.conductores?.codigo||'');
-    r['Flota'] = String(a.conductores?.flotas?.nombre||'');
-    r['Activo'] = String(a.activo||'');
-    r['Subpartes'] = Array.isArray(a.subpartes)?a.subpartes.join(', '):String(a.subpartes||'');
-    r['Inspector'] = String(a.usuarios?.nombre||'');
-    r['Fecha_solicitud'] = String(a.fecha_paso1||'');
-    r['Dias_pendiente'] = Math.round((new Date()-new Date(a.created_at))/864e5);
-    r['Estado'] = 'Pendiente notificar area';
-    return r;
-  });
-  const headers2 = Object.keys(rows[0]);
-  const aoa2 = [headers2, ...rows.map(r=>headers2.map(h=>{ const v=r[h]; return (v===null||v===undefined)?'':v; }))];
-  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
-  const wb2 = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb2,'Activos pendientes',ws2);
-  const wbout2 = XLSX.write(wb2,{bookType:'xlsx',type:'array'});
-  const blob2 = new Blob([wbout2],{type:'application/octet-stream'});
-  const url2 = URL.createObjectURL(blob2);
-  const a2 = document.createElement('a');
-  a2.href=url2; a2.download='activos_pendientes_'+new Date().toISOString().slice(0,10)+'.xlsx'; a2.click();
-  URL.revokeObjectURL(url2);
+  // Generar CSV (compatible con Excel)
+  const hdr = 'Conductor,Codigo,Flota,Activo,Subpartes,Inspector,Fecha_solicitud,Dias_pendiente,Estado';
+  const csv = hdr + '\n' + pendientes.map(a => [
+    '"'+(a.conductores?.nombre||'')+'"',
+    '"'+(a.conductores?.codigo||'')+'"',
+    '"'+(a.conductores?.flotas?.nombre||'')+'"',
+    '"'+(a.activo||'')+'"',
+    '"'+(Array.isArray(a.subpartes)?a.subpartes.join(', '):(a.subpartes||''))+'"',
+    '"'+(a.usuarios?.nombre||'')+'"',
+    '"'+(a.fecha_paso1||'')+'"',
+    Math.round((new Date()-new Date(a.created_at))/864e5),
+    '"Pendiente notificar area"'
+  ].join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download='activos_pendientes_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
+  URL.revokeObjectURL(url);
 }
 </script>
 
