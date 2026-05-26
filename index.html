@@ -6,6 +6,7 @@
 <title>Taxi Directo — Gestión de Flota</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1458,25 +1459,20 @@ async function parsearPadron(){
     let data=[];
     if(isXlsx){
       const buf = await file.arrayBuffer();
-      const wb2 = new ExcelJS.Workbook();
-      await wb2.xlsx.load(buf);
-      const ws2 = wb2.worksheets[0];
-      const raw2 = [];
-      const hdrs2 = [];
-      ws2.eachRow((row,ri)=>{
-        // ExcelJS row.values[0] es undefined, data empieza en [1]
-        const vals = Array.from({length: row.cellCount}, (_,i) => {
-          const cell = row.getCell(i+1);
-          return cell.value===null||cell.value===undefined?'':String(cell.value);
+      const wb2 = XLSX.read(buf, {type:'array'});
+      const ws2 = wb2.Sheets[wb2.SheetNames[0]];
+      const raw2 = XLSX.utils.sheet_to_json(ws2, {defval:'', raw:false});
+      // Normalizar headers a minúsculas
+      const raw = raw2.map(r=>{
+        const obj={};
+        Object.entries(r).forEach(([k,v])=>{
+          const key = k.toLowerCase().trim()
+            .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i')
+            .replace(/ó/g,'o').replace(/ú/g,'u').replace(/[^a-z]/g,'');
+          obj[key] = String(v||'').trim();
         });
-        if(ri===1){ vals.forEach(h=>hdrs2.push(h.toLowerCase().trim())); }
-        else{
-          const obj={};
-          vals.forEach((v,i)=>{ if(hdrs2[i]) obj[hdrs2[i]]=v; });
-          if(obj.codigo||obj.nombre) raw2.push(obj);
-        }
-      });
-      const raw = raw2;
+        return obj;
+      }).filter(r=>r.codigo&&r.nombre);
       // Normalizar headers
       data = raw.map(r=>{
         const obj={};
