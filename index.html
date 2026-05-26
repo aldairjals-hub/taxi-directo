@@ -1414,8 +1414,8 @@ function exportarReporteXlsx(){
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     XLSX.utils.book_append_sheet(wb,'Reporte',ws);
-    const out = XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
-    const blob = new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const out = XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const blob = new Blob([new Uint8Array(out)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href=url; a.download='reporte_'+mes+'.xlsx'; a.click();
@@ -1863,8 +1863,8 @@ async function exportarActivos() {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     XLSX.utils.book_append_sheet(wb,'Activos',ws);
-    const out = XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
-    const blob = new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const out = XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const blob = new Blob([new Uint8Array(out)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href=url; a.download='activos_pendientes_'+new Date().toISOString().slice(0,10)+'.xlsx'; a.click();
