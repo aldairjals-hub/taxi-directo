@@ -1212,6 +1212,22 @@ async function renderReportes(){
   window._reporteData = conds||[];
   window._reporteUltimaMes = ultimaMes;
   window._reporteFieldDefs = fieldDefs;
+  window._reportePorComb = porComb;
+  // Recopilar cabeceras únicas
+  const cabValues = {};
+  (conds||[]).forEach(c=>{
+    const insp = ultimaMes[c.id];
+    if(insp?.campos_evaluados){
+      Object.entries(insp.campos_evaluados).forEach(([k,v])=>{
+        const nombre = fieldDefs[k]||k;
+        if(nombre.toLowerCase().includes('cabecera') && v){
+          const val = Array.isArray(v)?v.join(', '):String(v);
+          cabValues[val] = (cabValues[val]||0)+1;
+        }
+      });
+    }
+  });
+  window._reporteCabValues = cabValues;
 
   const totalInsp = Object.keys(ultimaMes).length;
   const totalConds = conds?.length||0;
@@ -1284,6 +1300,10 @@ async function renderReportes(){
   html += '<select id="f-estado" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todos los estados</option><option value="activo">Activos</option><option value="congelado">Congelados</option></select>';
   html += '<select id="f-flota" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todas las flotas</option><option>Latam</option><option>Sky</option><option>Jetsmart</option><option>Aeropuerto</option><option>Urbano</option><option>Jockey Plaza</option><option>Bellavista</option></select>';
   html += '<select id="f-insp" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Con y sin inspección</option><option value="si">Con inspección</option><option value="no">Sin inspección</option></select>';
+  const combOpts = Object.keys(window._reportePorComb||{}).map(k=>'<option value="'+k+'">'+k+'</option>').join('');
+  html += '<select id="f-comb" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todos los combustibles</option>'+combOpts+'</select>';
+  const cabOpts = Object.keys(window._reporteCabValues||{}).map(k=>'<option value="'+k+'">'+k+'</option>').join('');
+  html += '<select id="f-cab" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todas las cabeceras</option>'+cabOpts+'</select>';
   html += '<input type="text" id="f-busq" placeholder="Nombre, código o placa..." oninput="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit;width:200px">';
   html += '</div>';
   html += '<div style="overflow-x:auto"><table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Vehículo · Placa</th><th>Estado</th><th>Inspección '+mesSeleccionado+'</th><th>Combustible</th><th>Score</th></tr></thead><tbody id="f-tbody"></tbody></table></div>';
@@ -1298,13 +1318,34 @@ function aplicarFiltros(){
   const est = document.getElementById('f-estado')?.value||'';
   const flota = document.getElementById('f-flota')?.value||'';
   const inspFiltro = document.getElementById('f-insp')?.value||'';
+  const combFiltro = document.getElementById('f-comb')?.value||'';
+  const cabFiltro = document.getElementById('f-cab')?.value||'';
   const busq = (document.getElementById('f-busq')?.value||'').toLowerCase();
+  const fieldDefs = window._reporteFieldDefs||{};
   let data = window._reporteData||[];
   if(cat) data=data.filter(c=>c.categoria===cat);
   if(est) data=data.filter(c=>c.estado===est);
   if(flota) data=data.filter(c=>c.flotas?.nombre===flota);
   if(inspFiltro==='si') data=data.filter(c=>window._reporteUltimaMes?.[c.id]);
   if(inspFiltro==='no') data=data.filter(c=>!window._reporteUltimaMes?.[c.id]);
+  if(combFiltro) data=data.filter(c=>{
+    const insp=window._reporteUltimaMes?.[c.id];
+    if(!insp?.campos_evaluados) return false;
+    return Object.entries(insp.campos_evaluados).some(([k,v])=>{
+      const nombre=(fieldDefs[k]||k).toLowerCase();
+      const val=Array.isArray(v)?v.join(', '):String(v);
+      return nombre.includes('combustible')&&val===combFiltro;
+    });
+  });
+  if(cabFiltro) data=data.filter(c=>{
+    const insp=window._reporteUltimaMes?.[c.id];
+    if(!insp?.campos_evaluados) return false;
+    return Object.entries(insp.campos_evaluados).some(([k,v])=>{
+      const nombre=(fieldDefs[k]||k).toLowerCase();
+      const val=Array.isArray(v)?v.join(', '):String(v);
+      return nombre.includes('cabecera')&&val===cabFiltro;
+    });
+  });
   if(busq) data=data.filter(c=>[c.nombre,c.codigo,c.placa].some(f=>f?.toLowerCase().includes(busq)));
   document.getElementById('f-count').textContent = data.length+' conductores';
   const fieldDefs = window._reporteFieldDefs||{};
@@ -1356,16 +1397,16 @@ function exportarReporteXlsx(){
       if(insp.score_experiencia!=null) score=insp.score_experiencia+'%';
     }
     const row = {};
-    row['Codigo'] = c.codigo;
-    row['Conductor'] = c.nombre;
-    row['Flota'] = c.flotas?.nombre||'';
-    row['Vehiculo'] = c.vehiculo||'';
-    row['Placa'] = c.placa||'';
-    row['Categoria'] = c.categoria||'';
-    row['Estado'] = c.estado;
+    row['Codigo'] = String(c.codigo||'');
+    row['Conductor'] = String(c.nombre||'');
+    row['Flota'] = String(c.flotas?.nombre||'');
+    row['Vehiculo'] = String(c.vehiculo||'');
+    row['Placa'] = String(c.placa||'');
+    row['Categoria'] = String(c.categoria||'');
+    row['Estado'] = String(c.estado||'');
     row['Inspeccion_'+mes] = insp?'Si':'No';
-    row['Combustible'] = comb;
-    row['Score'] = score;
+    row['Combustible'] = String(comb||'');
+    row['Score'] = String(score||'');
     return row;
   });
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -1795,17 +1836,19 @@ async function exportarActivos() {
   // Solo pendientes de paso 1 (no notificados al área aún)
   const pendientes = data.filter(a => a.fecha_paso1 && !a.fecha_paso2);
   if (!pendientes.length) { alert('No hay activos pendientes de notificar al área'); return; }
-  const rows = pendientes.map(a => ({
-    Conductor: a.conductores?.nombre||'',
-    Código: a.conductores?.codigo||'',
-    Flota: a.conductores?.flotas?.nombre||'',
-    Activo: a.activo||'',
-    Subpartes: Array.isArray(a.subpartes)?a.subpartes.join(', '):a.subpartes||'',
-    Inspector: a.usuarios?.nombre||'',
-    'Fecha solicitud': a.fecha_paso1||'',
-    'Días pendiente': Math.round((new Date()-new Date(a.created_at))/864e5),
-    Estado: 'Pendiente notificar área'
-  }));
+  const rows = pendientes.map(a => {
+    const r = {};
+    r['Conductor'] = String(a.conductores?.nombre||'');
+    r['Codigo'] = String(a.conductores?.codigo||'');
+    r['Flota'] = String(a.conductores?.flotas?.nombre||'');
+    r['Activo'] = String(a.activo||'');
+    r['Subpartes'] = Array.isArray(a.subpartes)?a.subpartes.join(', '):String(a.subpartes||'');
+    r['Inspector'] = String(a.usuarios?.nombre||'');
+    r['Fecha_solicitud'] = String(a.fecha_paso1||'');
+    r['Dias_pendiente'] = Math.round((new Date()-new Date(a.created_at))/864e5);
+    r['Estado'] = 'Pendiente notificar area';
+    return r;
+  });
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Activos pendientes',ws);
@@ -1901,95 +1944,6 @@ async function editarOpciones(id, opcionesActuales) {
 async function toggleCampo(id, activo) {
   await sb.from('formulario_campos').update({activo}).eq('id',id);
   renderConstructor();
-}
-
-// ─── REPORTES Y FILTROS ───────────────────
-async function renderReportes() {
-  const {data:conds} = await sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,categoria,estado,flotas(nombre)').neq('estado','desactivado');
-  const {data:ultInsp} = await sb.from('inspecciones').select('conductor_id,campos_evaluados').order('fecha',{ascending:false}).limit(500);
-  const ultimaPorCond = {};
-  (ultInsp||[]).forEach(i => { if(!ultimaPorCond[i.conductor_id]) ultimaPorCond[i.conductor_id]=i; });
-  const porCat={}, porComb={}, cabs={moviles:0,fijas:0,sin:0};
-  (conds||[]).forEach(c => {
-    const cat = c.categoria||'sin categoría';
-    porCat[cat] = (porCat[cat]||0)+1;
-    const insp = ultimaPorCond[c.id];
-    if (insp?.campos_evaluados) {
-      const campos = insp.campos_evaluados;
-      const combKey = Object.keys(campos).find(k=>k.toLowerCase().includes('combustible'));
-      if(combKey && campos[combKey]) porComb[campos[combKey]] = (porComb[campos[combKey]]||0)+1;
-      const cabKey = Object.keys(campos).find(k=>k.toLowerCase().includes('cabecera'));
-      if(cabKey && campos[cabKey]) {
-        const v = campos[cabKey].toLowerCase();
-        if(v.includes('móvil')||v.includes('movil')) cabs.moviles++;
-        else if(v.includes('fija')||v.includes('estática')) cabs.fijas++;
-        else cabs.sin++;
-      }
-    }
-  });
-  document.getElementById('main-content').innerHTML =
-    '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Reportes y filtros de flota</h2>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px;margin-bottom:16px">' +
-      '<div class="card" style="margin-bottom:0"><div class="card-title">Por categoría</div>' +
-        (Object.keys(porCat).length ? Object.entries(porCat).sort((a,b)=>b[1]-a[1]).map(([k,v])=>
-          '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--gray-100);font-size:12px"><span style="text-transform:capitalize">'+k+'</span><strong style="color:var(--blue)">'+v+'</strong></div>'
-        ).join('') : '<p style="color:var(--gray-400);font-size:12px">Sin datos de categoría — actualiza el padrón</p>') +
-      '</div>' +
-      '<div class="card" style="margin-bottom:0"><div class="card-title">Por combustible</div>' +
-        (Object.keys(porComb).length ? Object.entries(porComb).sort((a,b)=>b[1]-a[1]).map(([k,v])=>
-          '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--gray-100);font-size:12px"><span>'+k+'</span><strong style="color:var(--blue)">'+v+'</strong></div>'
-        ).join('') : '<p style="color:var(--gray-400);font-size:12px">Sin datos — requiere inspecciones con campo de combustible</p>') +
-      '</div>' +
-      '<div class="card" style="margin-bottom:0"><div class="card-title">Tipo de cabeceras</div>' +
-        '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--gray-100);font-size:12px"><span>Cabeceras móviles</span><strong style="color:var(--blue)">'+cabs.moviles+'</strong></div>' +
-        '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--gray-100);font-size:12px"><span>Cabeceras fijas</span><strong style="color:var(--blue)">'+cabs.fijas+'</strong></div>' +
-        '<div style="display:flex;justify-content:space-between;padding:7px 0;font-size:12px"><span>Sin cabeceras</span><strong style="color:var(--blue)">'+cabs.sin+'</strong></div>' +
-      '</div>' +
-    '</div>' +
-    '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
-      '<div class="card-title" style="margin-bottom:0">Filtrar padrón</div>' +
-      '<button class="btn btn-sm btn-primary" onclick="exportarFiltro()"><i class="ti ti-download"></i> Exportar CSV</button>' +
-    '</div>' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
-      '<select id="f-cat" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todas las categorías</option><option value="lite">Lite</option><option value="comfort">Comfort</option><option value="comfort_xl">Comfort XL</option><option value="xl">XL</option><option value="van">Van</option></select>' +
-      '<select id="f-estado" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todos los estados</option><option value="activo">Activos</option><option value="congelado">Congelados</option></select>' +
-      '<select id="f-flota" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todas las flotas</option><option value="Aeropuerto">Aeropuerto</option><option value="Aerolíneas">Aerolíneas</option><option value="Urbana">Urbana</option><option value="Plazas">Plazas</option></select>' +
-      '<input type="text" id="f-busq" placeholder="Nombre, código o placa..." oninput="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit;width:220px">' +
-    '</div>' +
-    '<table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Vehículo · Placa</th><th>Categoría</th><th>Estado</th></tr></thead><tbody id="f-tbody"></tbody></table>' +
-    '<div style="font-size:11px;color:var(--gray-400);margin-top:8px" id="f-count">'+(conds?.length||0)+' conductores</div>' +
-    '</div>';
-  window._reporteData = conds||[];
-  aplicarFiltros();
-}
-
-function aplicarFiltros() {
-  const cat=document.getElementById('f-cat')?.value||'';
-  const est=document.getElementById('f-estado')?.value||'';
-  const fl=document.getElementById('f-flota')?.value||'';
-  const q=(document.getElementById('f-busq')?.value||'').toLowerCase();
-  let d=window._reporteData||[];
-  if(cat)d=d.filter(c=>c.categoria===cat);
-  if(est)d=d.filter(c=>c.estado===est);
-  if(fl)d=d.filter(c=>c.flotas?.nombre===fl);
-  if(q)d=d.filter(c=>[c.nombre,c.codigo,c.placa].some(f=>f?.toLowerCase().includes(q)));
-  document.getElementById('f-count').textContent=d.length+' conductores';
-  document.getElementById('f-tbody').innerHTML=d.map(c=>
-    '<tr><td style="font-family:monospace;font-size:10px">'+c.codigo+'</td><td style="font-weight:600">'+c.nombre+'</td><td>'+badge(c.flotas?.nombre||'—','info')+'</td><td style="font-size:11px;color:var(--gray-600)">'+(c.vehiculo||'—')+(c.placa?' · '+c.placa:'')+'</td><td>'+badge(c.categoria||'—','gray')+'</td><td>'+badge(c.estado,c.estado==='activo'?'ok':'warn')+'</td></tr>'
-  ).join('');
-}
-
-function exportarFiltro() {
-  const cat=document.getElementById('f-cat')?.value||'';
-  const est=document.getElementById('f-estado')?.value||'';
-  const fl=document.getElementById('f-flota')?.value||'';
-  const q=(document.getElementById('f-busq')?.value||'').toLowerCase();
-  let d=window._reporteData||[];
-  if(cat)d=d.filter(c=>c.categoria===cat);if(est)d=d.filter(c=>c.estado===est);if(fl)d=d.filter(c=>c.flotas?.nombre===fl);if(q)d=d.filter(c=>[c.nombre,c.codigo,c.placa].some(f=>f?.toLowerCase().includes(q)));
-  const csv='codigo,nombre,flota,vehiculo,placa,categoria,estado\n'+d.map(c=>[c.codigo,c.nombre,c.flotas?.nombre||'',c.vehiculo||'',c.placa||'',c.categoria||'',c.estado].join(',')).join('\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');a.href=url;a.download='padron_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(url);
 }
 
 // ─── GESTIÓN PADRÓN ───────────────────────
