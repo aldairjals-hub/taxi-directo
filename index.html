@@ -1293,7 +1293,7 @@ async function renderReportes(){
   // Tabla con filtros
   html += '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
     '<div class="card-title" style="margin-bottom:0">Listado conductores — '+mesSeleccionado+'</div>' +
-    '<button class="btn btn-sm btn-primary" onclick="exportarReporteXlsx()"><i class="ti ti-download"></i> Exportar CSV</button>' +
+    '<button class="btn btn-sm btn-primary" onclick="exportarReporteXlsx()"><i class="ti ti-download"></i> Exportar Excel</button>' +
   '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
   html += '<select id="f-cat" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todas las categorías</option><option value="lite">Lite</option><option value="comfort">Comfort</option><option value="comfort_xl">Comfort XL</option><option value="xl">XL</option><option value="van">Van</option></select>';
@@ -1408,16 +1408,21 @@ function exportarReporteXlsx(){
     return row;
   });
   if(!rows.length){alert('Sin datos para exportar');return;}
-  const headers = Object.keys(rows[0]);
-  const csvRows = [headers.join(','), ...rows.map(r=>headers.map(h=>{
-    const v = r[h]===null||r[h]===undefined?'':String(r[h]);
-    return '"'+v.replace(/"/g,'""')+'"';
-  }).join(','))];
-  const blob = new Blob(['\uFEFF'+csvRows.join('\n')],{type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href=url; a.download='reporte_'+mes+'.csv'; a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const headers = ['Codigo','Conductor','Flota','Vehiculo','Placa','Categoria','Estado','Inspeccion_'+mes,'Combustible','Score'];
+    const aoa = [headers, ...rows.map(r=>headers.map(h=>String(r[h]||'')))];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb,'Reporte',ws);
+    const out = XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
+    const blob = new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url; a.download='reporte_'+mes+'.xlsx'; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al generar Excel: '+e.message);
+  }
 }
 
 // --- PADRÓN -------------------------------
@@ -1840,24 +1845,33 @@ async function exportarActivos() {
   if (!data?.length) { alert('Sin datos para exportar'); return; }
   const pendientes = data.filter(a => a.fecha_paso1 && !a.fecha_paso2);
   if (!pendientes.length) { alert('No hay activos pendientes de notificar al área'); return; }
-  // Generar CSV (compatible con Excel)
-  const hdr = 'Conductor,Codigo,Flota,Activo,Subpartes,Inspector,Fecha_solicitud,Dias_pendiente,Estado';
-  const csv = hdr + '\n' + pendientes.map(a => [
-    '"'+(a.conductores?.nombre||'')+'"',
-    '"'+(a.conductores?.codigo||'')+'"',
-    '"'+(a.conductores?.flotas?.nombre||'')+'"',
-    '"'+(a.activo||'')+'"',
-    '"'+(Array.isArray(a.subpartes)?a.subpartes.join(', '):(a.subpartes||''))+'"',
-    '"'+(a.usuarios?.nombre||'')+'"',
-    '"'+(a.fecha_paso1||'')+'"',
-    Math.round((new Date()-new Date(a.created_at))/864e5),
-    '"Pendiente notificar area"'
-  ].join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href=url; a.download='activos_pendientes_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const aoa = [
+      ['Conductor','Codigo','Flota','Activo','Subpartes','Inspector','Fecha solicitud','Dias pendiente','Estado'],
+      ...pendientes.map(a=>[
+        String(a.conductores?.nombre||''),
+        String(a.conductores?.codigo||''),
+        String(a.conductores?.flotas?.nombre||''),
+        String(a.activo||''),
+        String(Array.isArray(a.subpartes)?a.subpartes.join(', '):(a.subpartes||'')),
+        String(a.usuarios?.nombre||''),
+        String(a.fecha_paso1||''),
+        String(Math.round((new Date()-new Date(a.created_at))/864e5)),
+        'Pendiente notificar area'
+      ])
+    ];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb,'Activos',ws);
+    const out = XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
+    const blob = new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url; a.download='activos_pendientes_'+new Date().toISOString().slice(0,10)+'.xlsx'; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al generar Excel: '+e.message);
+  }
 }
 </script>
 
