@@ -789,7 +789,6 @@ document.addEventListener('click', async function(e){
 });
 </script>
 <script>
-<script>
 // --- BLOQUEOS -----------------------------
 async function renderBloqueos() {
   const {data, error} = await sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
