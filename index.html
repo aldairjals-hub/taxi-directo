@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Taxi Directo — Gestión de Flota</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1409,20 +1409,24 @@ function exportarReporteXlsx(){
   });
   if(!rows.length){alert('Sin datos para exportar');return;}
   try {
-    const headers = ['Codigo','Conductor','Flota','Vehiculo','Placa','Categoria','Estado','Inspeccion_'+mes,'Combustible','Score'];
-    const aoa = [headers, ...rows.map(r=>headers.map(h=>String(r[h]||'')))];
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    XLSX.utils.book_append_sheet(wb,'Reporte',ws);
-    const out = XLSX.write(wb,{type:'array',bookType:'xlsx'});
-    const blob = new Blob([new Uint8Array(out)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Reporte');
+    ws.addRow(['Codigo','Conductor','Flota','Vehiculo','Placa','Categoria','Estado','Inspeccion_'+mes,'Combustible','Score']);
+    rows.forEach(r => {
+      ws.addRow([
+        String(r['Codigo']||''),String(r['Conductor']||''),String(r['Flota']||''),
+        String(r['Vehiculo']||''),String(r['Placa']||''),String(r['Categoria']||''),
+        String(r['Estado']||''),String(r['Inspeccion_'+mes]||''),
+        String(r['Combustible']||''),String(r['Score']||'')
+      ]);
+    });
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href=url; a.download='reporte_'+mes+'.xlsx'; a.click();
     URL.revokeObjectURL(url);
-  } catch(e) {
-    alert('Error al generar Excel: '+e.message);
-  }
+  } catch(e) { alert('Error: '+e.message); }
 }
 
 // --- PADRÓN -------------------------------
@@ -1454,9 +1458,16 @@ async function parsearPadron(){
     let data=[];
     if(isXlsx){
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf,{type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json(ws,{defval:''});
+      const wb2 = new ExcelJS.Workbook();
+      await wb2.xlsx.load(buf);
+      const ws2 = wb2.worksheets[0];
+      const raw2 = [];
+      const hdrs2 = [];
+      ws2.eachRow((row,ri)=>{
+        if(ri===1){row.values.slice(1).forEach(h=>hdrs2.push(String(h||'')));}
+        else{const obj={};row.values.slice(1).forEach((v,i)=>{obj[hdrs2[i]]=String(v===null||v===undefined?'':v);});raw2.push(obj);}
+      });
+      const raw = raw2;
       // Normalizar headers
       data = raw.map(r=>{
         const obj={};
@@ -1846,9 +1857,11 @@ async function exportarActivos() {
   const pendientes = data.filter(a => a.fecha_paso1 && !a.fecha_paso2);
   if (!pendientes.length) { alert('No hay activos pendientes de notificar al área'); return; }
   try {
-    const aoa = [
-      ['Conductor','Codigo','Flota','Activo','Subpartes','Inspector','Fecha solicitud','Dias pendiente','Estado'],
-      ...pendientes.map(a=>[
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Activos pendientes');
+    ws.addRow(['Conductor','Codigo','Flota','Activo','Subpartes','Inspector','Fecha solicitud','Dias pendiente','Estado']);
+    pendientes.forEach(a => {
+      ws.addRow([
         String(a.conductores?.nombre||''),
         String(a.conductores?.codigo||''),
         String(a.conductores?.flotas?.nombre||''),
@@ -1858,20 +1871,15 @@ async function exportarActivos() {
         String(a.fecha_paso1||''),
         String(Math.round((new Date()-new Date(a.created_at))/864e5)),
         'Pendiente notificar area'
-      ])
-    ];
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    XLSX.utils.book_append_sheet(wb,'Activos',ws);
-    const out = XLSX.write(wb,{type:'array',bookType:'xlsx'});
-    const blob = new Blob([new Uint8Array(out)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      ]);
+    });
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href=url; a.download='activos_pendientes_'+new Date().toISOString().slice(0,10)+'.xlsx'; a.click();
     URL.revokeObjectURL(url);
-  } catch(e) {
-    alert('Error al generar Excel: '+e.message);
-  }
+  } catch(e) { alert('Error: '+e.message); }
 }
 </script>
 
