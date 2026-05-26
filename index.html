@@ -920,7 +920,7 @@ async function reactivar(id, nombre) {
 
 // --- COMPROMISOS --------------------------
 async function renderCompromisos() {
-  const {data, error: errComp} = await sb.from('compromisos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').order('fecha_limite');
+  const {data, error: errComp} = await sb.from('compromisos').select('*,conductores!compromisos_conductor_id_fkey(codigo,nombre,placa,vehiculo,flotas(nombre))').order('fecha_limite');
   if (errComp) { document.getElementById('main-content').innerHTML = '<div class="card"><div class="alert alert-danger"><div class="at">Error cargando compromisos: '+errComp.message+'</div></div></div>'; return; }
   const hoy = new Date();
   const urgentes = (data||[]).filter(c => c.estado!=='resuelto' && Math.round((new Date(c.fecha_limite)-hoy)/864e5)<=3).length;
