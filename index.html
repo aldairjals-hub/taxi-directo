@@ -173,15 +173,21 @@ async function doLogout() {
 }
 
 async function startApp(user) {
-  CU = user;
-  const { data: perfil } = await sb.from('usuarios').select('*').eq('id', user.id).single();
-  CP = perfil;
-  document.getElementById('login-page').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-  document.getElementById('user-name').textContent = perfil?.nombre || user.email;
-  document.getElementById('user-role').textContent = perfil?.rol || 'usuario';
-  buildNav(perfil?.rol || 'inspector');
-  loadTab('dashboard');
+  try {
+    CU = user;
+    const { data: perfil, error: perfilErr } = await sb.from('usuarios').select('*').eq('id', user.id).single();
+    if (perfilErr) console.warn('Perfil no encontrado, usando datos básicos:', perfilErr.message);
+    CP = perfil;
+    document.getElementById('login-page').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('user-name').textContent = perfil?.nombre || user.email;
+    document.getElementById('user-role').textContent = perfil?.rol || 'usuario';
+    buildNav(perfil?.rol || 'inspector');
+    loadTab('dashboard');
+  } catch(e) {
+    console.error('Error en startApp:', e);
+    showLoginError('Error al iniciar la app: ' + e.message);
+  }
 }
 
 // --- NAV ----------------------------------
@@ -773,7 +779,7 @@ async function generarPDF(inspId) {
     (i.observacion_general?'<div style="background:#F8FAFC;padding:9px;border-radius:6px;margin-top:10px;font-size:11px"><strong>Observación:</strong> '+i.observacion_general+'</div>':'') +
     '<div class="footer"><span>Taxi Directo · Sistema de Gestión de Flota</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>' +
     '<br class="no-print"><button onclick="window.print()" class="no-print" style="padding:8px 16px;background:#1A56DB;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Guardar PDF</button>' +
-'</body></html>');
+    '</body></html>');
   w.document.close();
 }
 
@@ -1484,7 +1490,7 @@ async function reactivar(id, nombre) {
 
 // --- COMPROMISOS --------------------------
 async function renderCompromisos() {
-  const {data, error: errComp} = await sb.from('compromisos').select('*,conductores!compromisos_conductor_id_fkey(codigo,nombre,placa,vehiculo,flotas(nombre))').order('fecha_limite');
+  const {data, error: errComp} = await sb.from('compromisos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').order('fecha_limite');
   if (errComp) { document.getElementById('main-content').innerHTML = '<div class="card"><div class="alert alert-danger"><div class="at">Error cargando compromisos: '+errComp.message+'</div></div></div>'; return; }
   const hoy = new Date();
   const urgentes = (data||[]).filter(c => c.estado!=='resuelto' && Math.round((new Date(c.fecha_limite)-hoy)/864e5)<=3).length;
@@ -1908,11 +1914,23 @@ function exportarReporteXlsx(){
       });
       if(insp.score_experiencia!=null) score=insp.score_experiencia+'%';
     }
- return {'Codigo':c.codigo,'Conductor':c.nombre,'Flota':c.flotas?.nombre||'','Vehiculo':c.vehiculo||'','Placa':c.placa||'','Categoria':c.categoria||'','Estado':c.estado,['Inspeccion_'+mes]:insp?'Si':'No','Combustible':comb,'Score':score};
+    const row = {};
+    row['Codigo'] = c.codigo;
+    row['Conductor'] = c.nombre;
+    row['Flota'] = c.flotas?.nombre||'';
+    row['Vehiculo'] = c.vehiculo||'';
+    row['Placa'] = c.placa||'';
+    row['Categoria'] = c.categoria||'';
+    row['Estado'] = c.estado;
+    row['Inspeccion_'+mes] = insp?'Si':'No';
+    row['Combustible'] = comb;
+    row['Score'] = score;
+    return row;
+  });
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'Reporte',ws);
-XLSX.writeFile(wb,'reporte_'+mes+'.xlsx');
+  XLSX.writeFile(wb,'reporte_'+mes+'.xlsx');
 }
 
 // --- PADRÓN -------------------------------
@@ -1996,10 +2014,11 @@ async function renderUsuarios(){
 }
 
 // --- INIT ---------------------------------
+let _appStarted = false;
 (async()=>{
   const{data:{session}}=await sb.auth.getSession();
-  if(session){await startApp(session.user);}
-  else{document.getElementById('login-page').style.display='flex';}
+  if(session){ _appStarted=true; await startApp(session.user); }
+  else{ document.getElementById('login-page').style.display='flex'; }
 })();
 </script>
 <script>
@@ -2660,8 +2679,8 @@ async function crearUsuario() {
 
 // ─── INIT ─────────────────────────────────
 sb.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) { await startApp(session.user); }
-  else { document.getElementById('login-page').style.display='flex'; document.getElementById('app').style.display='none'; }
+  if (event==='SIGNED_IN' && !_appStarted) { _appStarted=true; await startApp(session.user); }
+  else if (event==='SIGNED_OUT') { _appStarted=false; document.getElementById('app').style.display='none'; document.getElementById('login-page').style.display='flex'; }
 });
 </script>
 
