@@ -1997,10 +1997,11 @@ async function renderUsuarios(){
 }
 
 // --- INIT ---------------------------------
+let _appStarted = false;
 (async()=>{
   const{data:{session}}=await sb.auth.getSession();
-  if(session){await startApp(session.user);}
-  else{document.getElementById('login-page').style.display='flex';}
+  if(session){ _appStarted=true; await startApp(session.user); }
+  else{ document.getElementById('login-page').style.display='flex'; }
 })();
 </script>
 <script>
@@ -2661,8 +2662,8 @@ async function crearUsuario() {
 
 // ─── INIT ─────────────────────────────────
 sb.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) { await startApp(session.user); }
-  else { document.getElementById('login-page').style.display='flex'; document.getElementById('app').style.display='none'; }
+  if (event==='SIGNED_IN' && !_appStarted) { _appStarted=true; await startApp(session.user); }
+  else if (event==='SIGNED_OUT') { _appStarted=false; document.getElementById('app').style.display='none'; document.getElementById('login-page').style.display='flex'; }
 });
 </script>
 
