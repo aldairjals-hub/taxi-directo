@@ -1347,13 +1347,12 @@ function aplicarFiltros(){
   });
   if(busq) data=data.filter(c=>[c.nombre,c.codigo,c.placa].some(f=>f?.toLowerCase().includes(busq)));
   document.getElementById('f-count').textContent = data.length+' conductores';
-  const fieldDefs = window._reporteFieldDefs||{};
   document.getElementById('f-tbody').innerHTML = data.map(c=>{
     const insp = window._reporteUltimaMes?.[c.id];
     let comb='—', score='—', scoreNum=0;
     if(insp?.campos_evaluados){
       Object.entries(insp.campos_evaluados).forEach(([k,v])=>{
-        const nombre=(fieldDefs[k]||k).toLowerCase();
+        const nombre=(window._reporteFieldDefs[k]||k).toLowerCase();
         if(nombre.includes('combustible')) comb=Array.isArray(v)?v.join(', '):String(v);
       });
       if(insp.score_experiencia!=null){ scoreNum=insp.score_experiencia; score=scoreNum+'%'; }
@@ -1390,7 +1389,7 @@ function exportarReporteXlsx(){
     let comb='', score='';
     if(insp?.campos_evaluados){
       Object.entries(insp.campos_evaluados).forEach(([k,v])=>{
-        const nombre=(fieldDefs[k]||k).toLowerCase();
+        const nombre=(window._reporteFieldDefs[k]||k).toLowerCase();
         if(nombre.includes('combustible')) comb=Array.isArray(v)?v.join(', '):String(v);
       });
       if(insp.score_experiencia!=null) score=insp.score_experiencia+'%';
