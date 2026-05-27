@@ -144,6 +144,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
 <script>
 // --- CONFIG -------------------------------
 const SB_URL = 'https://rvqyeqxbbjqmezwpfmug.supabase.co';
+
+// Fecha local Peru (UTC-5)
+function fechaHoy() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0,10);
+}
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ2cXllcXhiYmpxbWV6d3BmbXVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NzUzODAsImV4cCI6MjA5NTA1MTM4MH0.Zvt9dPqFzOQ40mX_hFeR2Ph00FR9zASx1-B0VVkpVJU';
 const sb = supabase.createClient(SB_URL, SB_KEY);
 
@@ -299,6 +306,7 @@ async function renderDashboard() {
   const compVencidos = r7.count||0;
   const pct = total ? Math.round(insp/total*100) : 0;
   const col = pct>=80?'var(--green)':pct>=50?'var(--amber)':'var(--red)';
+  const colHex = pct>=80?'#0F6E56':pct>=50?'#92400E':'#B91C1C';
   const mesLabel = new Date().toLocaleString('es-PE',{month:'long',year:'numeric'});
   const tendencia = inspHoy > inspAyer ? '▲' : inspHoy < inspAyer ? '▼' : '=';
   const tendCol = inspHoy > inspAyer ? 'var(--green)' : inspHoy < inspAyer ? 'var(--red)' : 'var(--gray-400)';
@@ -309,8 +317,8 @@ async function renderDashboard() {
   const dash = pctFill*circ;
   const donutSvg = '<svg width="140" height="140" viewBox="0 0 140 140">'+
     '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="#F1F5F9" stroke-width="14"/>'+
-    '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+col.replace('var(','').replace(')','')+'" stroke-width="14" stroke-dasharray="'+dash+' '+circ+'" stroke-dashoffset="'+( circ/4)+'" stroke-linecap="round" style="transition:stroke-dasharray .6s"/>'+
-    '<text x="'+cx+'" y="'+( cy-6)+'" text-anchor="middle" font-size="20" font-weight="700" fill="'+col.replace('var(','').replace(')','')+'">'+pct+'%</text>'+
+    '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+colHex+'" stroke-width="14" stroke-dasharray="'+dash+' '+circ+'" stroke-dashoffset="'+( circ/4)+'" stroke-linecap="round" style="transition:stroke-dasharray .6s"/>'+
+    '<text x="'+cx+'" y="'+( cy-6)+'" text-anchor="middle" font-size="20" font-weight="700" fill="'+colHex+'">'+pct+'%</text>'+
     '<text x="'+cx+'" y="'+( cy+12)+'" text-anchor="middle" font-size="10" fill="#94A3B8">avance</text>'+
     '<text x="'+cx+'" y="'+( cy+26)+'" text-anchor="middle" font-size="10" fill="#94A3B8">'+insp+'/'+total+'</text>'+
   '</svg>';
@@ -478,7 +486,7 @@ async function renderInspeccion() {
               '<option value="'+( CU?.id||'')+'">'+( CP?.nombre||'Yo')+'</option>' +
             '</select></div>' +
           '<div class="form-field"><label class="form-label2">Fecha</label>' +
-            '<input type="date" id="insp-fecha" value="'+new Date().toISOString().slice(0,10)+'"></div>' +
+            '<input type="date" id="insp-fecha" value="'+fechaHoy()+'"></div>' +
         '</div>' +
         '<div style="font-size:9px;font-weight:700;color:var(--gray-400);text-transform:uppercase;padding-bottom:8px;border-bottom:1.5px solid var(--gray-200);margin-bottom:12px">Paso 3 — Evaluación</div>' +
         '<div id="insp-campos">'+buildCamposHtml(campos||[])+'</div>' +
@@ -865,13 +873,14 @@ document.addEventListener('click', async function(e){
 // --- BLOQUEOS -----------------------------
 async function renderBloqueos() {
   const mes = new Date().toISOString().slice(0,7);
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = fechaHoy();
+  const ahora = new Date();
+  const hora = ahora.getHours() + ahora.getMinutes()/60;
+  const es430 = hora >= 16.5 && hora < 17.5; // entre 4:30pm y 5:30pm
 
-  // Cargar fecha de corte configurada
   const {data:configData} = await sb.from('config_sistema').select('valor').eq('clave','fecha_corte_mes').single();
   const fechaCorte = configData?.valor || '';
 
-  // Cargar datos en paralelo
   const [{data:bloqueos,error},{data:conductores},{data:inspMes},{data:bloqueadosPorInsp}] = await Promise.all([
     sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false}),
     sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,flotas(nombre)').neq('estado','desactivado'),
@@ -886,111 +895,125 @@ async function renderBloqueos() {
   const inspIds = new Set((inspMes||[]).map(i=>i.conductor_id));
   const bloqInspIds = new Set((bloqueadosPorInsp||[]).map(b=>b.conductor_id));
 
-  // Conductores sin inspección (pendientes de bloquear por fecha corte)
+  // Conductores sin inspección pendientes de bloquear
   const sinInsp = cortePasado ? (conductores||[]).filter(c => !inspIds.has(c.id) && !bloqInspIds.has(c.id)) : [];
-  // Conductores bloqueados por inspección que YA subsanaron (listos para desbloquear)
-  const listos = (bloqueos||[]).filter(b => b.tipo==='inspeccion' && inspIds.has(b.conductor_id));
-  // Bloqueos normales (incidencias, mal estado)
-  const normales = (bloqueos||[]).filter(b => b.tipo!=='inspeccion');
-  // Bloqueos por inspección aún pendientes
-  const bloqInsp = (bloqueos||[]).filter(b => b.tipo==='inspeccion' && !inspIds.has(b.conductor_id));
 
-  // Badges
+  // Listos para desbloquear:
+  // 1. Bloqueados por inspección que ya inspeccionaron
+  // 2. Suspensiones por incidencia/mal estado que ya vencieron (fecha_reactivacion <= hoy)
+  const listosInsp = (bloqueos||[]).filter(b => b.tipo==='inspeccion' && inspIds.has(b.conductor_id));
+  const listosVencidos = (bloqueos||[]).filter(b => b.tipo!=='inspeccion' && b.fecha_reactivacion && b.fecha_reactivacion <= hoy);
+  const listos = [...listosInsp, ...listosVencidos];
+
+  // Suspensiones activas (no vencidas)
+  const suspActivas = (bloqueos||[]).filter(b => b.tipo!=='inspeccion' && !(b.fecha_reactivacion && b.fecha_reactivacion <= hoy))
+    .sort((a,b) => {
+      if (!a.fecha_reactivacion) return 1;
+      if (!b.fecha_reactivacion) return -1;
+      return new Date(a.fecha_reactivacion) - new Date(b.fecha_reactivacion);
+    });
+
+  // Bloqueados por inspección pendiente de subsanar
+  const bloqInspPend = (bloqueos||[]).filter(b => b.tipo==='inspeccion' && !inspIds.has(b.conductor_id));
+
+  // Vencen HOY (para alerta 4:30pm)
+  const vencenHoy = (bloqueos||[]).filter(b => b.fecha_reactivacion === hoy && !inspIds.has(b.conductor_id));
+
   if(document.getElementById('badge-bloqueos')) document.getElementById('badge-bloqueos').textContent = (bloqueos||[]).length;
 
   let html = '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Bloqueos y suspensiones</h2>';
 
-  // ── Configuración fecha corte ──
-  html += '<div class="card" style="margin-bottom:14px;border-color:'+(fechaCorte?'var(--blue)':'var(--amber)'+'">')+'">';
+  // ── Banner alerta 4:30pm ──
+  if (es430 && vencenHoy.length) {
+    html += '<div style="background:#FEF3C7;border:2px solid #F59E0B;border-radius:10px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px">' +
+      '<span style="font-size:28px">⏰</span>' +
+      '<div>' +
+        '<div style="font-size:14px;font-weight:700;color:#92400E">Son las 4:30pm — hay '+vencenHoy.length+' conductor(es) que cumplen su sanción hoy</div>' +
+        '<div style="font-size:12px;color:#92400E;margin-top:3px">Reactívalos antes de las 6pm para que puedan operar mañana</div>' +
+        '<div style="font-size:11px;color:#92400E;margin-top:4px">'+vencenHoy.map(b=>b.conductores?.nombre||'—').join(' · ')+'</div>' +
+      '</div>' +
+    '</div>';
+  } else if (listos.length > 0) {
+    // Siempre mostrar aviso si hay listos para desbloquear
+    html += '<div class="alert alert-success"><div class="at"><i class="ti ti-bell"></i> '+listos.length+' conductor(es) listos para reactivar — revisa la sección verde</div></div>';
+  }
+
+  // ── Config fecha corte ──
+  html += '<div class="card" style="margin-bottom:14px">';
   html += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
   html += '<div><div style="font-size:13px;font-weight:700;margin-bottom:3px"><i class="ti ti-calendar-event" style="color:var(--blue)"></i> Fecha de corte — '+mes+'</div>';
-  html += '<div style="font-size:11px;color:var(--gray-400)">Al pasar esta fecha, el sistema identifica conductores sin inspección</div></div>';
+  html += '<div style="font-size:11px;color:var(--gray-400)">Al pasar esta fecha el sistema identifica conductores sin inspección</div></div>';
   html += '<div style="display:flex;align-items:center;gap:8px">';
   html += '<input type="date" id="input-fecha-corte" value="'+(fechaCorte||'')+'" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--blue);border-radius:7px">';
   html += '<button class="btn btn-primary btn-sm" onclick="guardarFechaCorte()"><i class="ti ti-check"></i> Guardar</button>';
   html += '</div></div>';
-  if(fechaCorte) html += '<div style="font-size:11px;margin-top:8px;color:'+(cortePasado?'var(--red)':'var(--green)')+'"><i class="ti ti-'+(cortePasado?'alert-circle':'clock')+'"></i> '+( cortePasado?'Fecha de corte vencida — hay conductores pendientes de bloquear':'Fecha de corte vigente: '+fechaCorte)+'</div>';
+  if(fechaCorte) html += '<div style="font-size:11px;margin-top:8px;color:'+(cortePasado?'var(--red)':'var(--green)')+'"><i class="ti ti-'+(cortePasado?'alert-circle':'clock')+'"></i> '+(cortePasado?'Fecha de corte vencida — hay conductores pendientes de bloquear':'Fecha vigente: '+fechaCorte)+'</div>';
   html += '</div>';
 
   // ── SECCIÓN 1: Pendientes de bloquear (ROJO) ──
   html += '<div class="card" style="margin-bottom:14px;border-color:#FCA5A5">';
-  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
   html += '<div><div style="font-size:14px;font-weight:700;color:var(--red)"><i class="ti ti-lock"></i> Pendientes de bloquear <span style="background:var(--red);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px">'+sinInsp.length+'</span></div>';
-  html += '<div style="font-size:11px;color:var(--gray-400);margin-top:2px">Conductores sin inspección del mes — el inspector debe bloquearlos en el sistema</div></div>';
+  html += '<div style="font-size:11px;color:var(--gray-400);margin-top:2px">Sin inspección del mes — el inspector debe bloquearlos</div></div>';
   if(sinInsp.length) html += '<button class="btn btn-sm btn-danger" onclick="bloquearTodos()"><i class="ti ti-lock"></i> Bloquear todos ('+sinInsp.length+')</button>';
   html += '</div>';
-
   if(!cortePasado) {
     html += '<div style="text-align:center;padding:16px;color:var(--gray-400);font-size:12px"><i class="ti ti-calendar"></i> Configura la fecha de corte para ver los pendientes</div>';
   } else if(!sinInsp.length) {
     html += '<div style="text-align:center;padding:16px;color:var(--green);font-size:12px"><i class="ti ti-circle-check"></i> ¡Todos los conductores tienen inspección este mes!</div>';
   } else {
-    html += '<div class="search-bar" style="margin-bottom:10px"><i class="ti ti-search"></i><input type="text" id="bus-pend" placeholder="Buscar por nombre, código o flota..." oninput="filtrarPendientes()" style="border:none;background:transparent;font-size:13px;flex:1;font-family:inherit;outline:none"><span class="search-count" id="cnt-pend">'+sinInsp.length+' conductores</span></div>';
-    html += '<div id="lista-pend">';
-    html += renderListaPendientes(sinInsp);
-    html += '</div>';
+    html += '<div class="search-bar" style="margin-bottom:10px"><i class="ti ti-search"></i><input type="text" id="bus-pend" placeholder="Buscar nombre, código o flota..." oninput="filtrarPendientes()" style="border:none;background:transparent;font-size:13px;flex:1;font-family:inherit;outline:none"><span class="search-count" id="cnt-pend">'+sinInsp.length+' conductores</span></div>';
+    html += '<div id="lista-pend">'+renderListaPendientes(sinInsp)+'</div>';
   }
   html += '</div>';
   window._pendientesBloquear = sinInsp;
 
   // ── SECCIÓN 2: Listos para desbloquear (VERDE) ──
   html += '<div class="card" style="margin-bottom:14px;border-color:#6EE7B7">';
-  html += '<div style="font-size:14px;font-weight:700;color:var(--green);margin-bottom:8px"><i class="ti ti-circle-check"></i> Listos para desbloquear <span style="background:var(--green);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px">'+listos.length+'</span></div>';
-  html += '<div style="font-size:11px;color:var(--gray-400);margin-bottom:12px">Estaban bloqueados por inspección y ya la realizaron — reactivar ahora</div>';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+  html += '<div><div style="font-size:14px;font-weight:700;color:var(--green)"><i class="ti ti-circle-check"></i> Listos para desbloquear <span style="background:var(--green);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px">'+listos.length+'</span></div>';
+  html += '<div style="font-size:11px;color:var(--gray-400);margin-top:2px">Sanción cumplida o inspección subsanada — reactivar ahora</div></div>';
+  html += '</div>';
   if(!listos.length) {
     html += '<div style="text-align:center;padding:12px;color:var(--gray-400);font-size:12px">Sin conductores listos para desbloquear</div>';
   } else {
-    html += listos.map(b => '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)">' +
-      '<div><div style="font-size:13px;font-weight:600;color:var(--green)">✓ '+(b.conductores?.nombre||'—')+'</div>' +
-      '<div style="font-size:11px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+' · '+(b.conductores?.flotas?.nombre||'—')+' · Ya inspeccionado este mes</div></div>' +
-      '<button class="btn btn-sm btn-primary" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Desbloquear</button>' +
-    '</div>').join('');
+    html += '<div class="search-bar" style="margin-bottom:10px"><i class="ti ti-search"></i><input type="text" id="bus-listos" placeholder="Buscar nombre, código o flota..." oninput="filtrarListos()" style="border:none;background:transparent;font-size:13px;flex:1;font-family:inherit;outline:none"><span class="search-count" id="cnt-listos">'+listos.length+' conductores</span></div>';
+    html += '<div id="lista-listos">'+renderListaListos(listos)+'</div>';
   }
   html += '</div>';
+  window._listosDesbloquear = listos;
 
-  // ── SECCIÓN 3: Bloqueados por inspección (pendiente subsanar) ──
-  if(bloqInsp.length) {
+  // ── SECCIÓN 3: Bloqueados por inspección pendiente ──
+  if(bloqInspPend.length) {
     html += '<div class="card" style="margin-bottom:14px">';
-    html += '<div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:8px"><i class="ti ti-clock"></i> Bloqueados por inspección — pendiente subsanar <span style="background:var(--amber);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px">'+bloqInsp.length+'</span></div>';
-    html += bloqInsp.map(b => '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--gray-100)">' +
-      '<div><div style="font-size:12px;font-weight:600">'+(b.conductores?.nombre||'—')+'</div>' +
-      '<div style="font-size:11px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+' · '+(b.conductores?.flotas?.nombre||'—')+'</div></div>' +
-      '<button class="btn btn-sm" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Reactivar</button>' +
-    '</div>').join('');
+    html += '<div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:8px"><i class="ti ti-clock"></i> Bloqueados por inspección — pendiente subsanar <span style="background:var(--amber);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px">'+bloqInspPend.length+'</span></div>';
+    html += '<div style="font-size:11px;color:var(--gray-400);margin-bottom:10px">Estos conductores aún no han subsanado su inspección</div>';
+    html += bloqInspPend.map(b =>
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--gray-100)">' +
+        '<div><div style="font-size:12px;font-weight:600">'+(b.conductores?.nombre||'—')+'</div>' +
+        '<div style="font-size:11px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+' · '+(b.conductores?.flotas?.nombre||'—')+' · Bloqueado desde '+(b.fecha_bloqueo||'—')+'</div></div>' +
+        '<button class="btn btn-sm" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Reactivar</button>' +
+      '</div>'
+    ).join('');
     html += '</div>';
   }
 
-  // ── SECCIÓN 4: Suspensiones normales ──
+  // ── SECCIÓN 4: Suspensiones activas ──
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
-  html += '<div style="font-size:14px;font-weight:700">Suspensiones por incidencia / mal estado</div>';
+  html += '<div style="font-size:14px;font-weight:700">Suspensiones por incidencia / mal estado <span style="font-size:11px;font-weight:400;color:var(--gray-400)">— ordenadas por vencimiento</span></div>';
   html += '<button class="btn btn-danger btn-sm" onclick="abrirFormBloqueo()"><i class="ti ti-plus"></i> Nueva suspensión</button>';
   html += '</div>';
 
-  if(!normales.length) {
+  if(!suspActivas.length) {
     html += '<div class="card"><div style="text-align:center;padding:16px;color:var(--gray-400);font-size:12px">Sin suspensiones activas ✓</div></div>';
   } else {
-    const hoyD = new Date();
-    html += '<div class="card"><table><thead><tr><th>Conductor</th><th>Flota</th><th>Motivo</th><th>Días restantes</th><th>Estado</th><th>Acción</th></tr></thead><tbody>';
-    normales.forEach(b => {
-      let diasTxt='Hasta subsanar', diasCol='var(--red)';
-      if(b.fecha_reactivacion){
-        const diff=Math.ceil((new Date(b.fecha_reactivacion)-hoyD)/864e5);
-        diasTxt=diff<=0?'Vence hoy':diff+'d restantes';
-        diasCol=diff<=1?'var(--red)':'var(--amber)';
-      }
-      html += '<tr>' +
-        '<td><div style="font-weight:600">'+(b.conductores?.nombre||'—')+'</div><div style="font-size:10px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+'</div></td>' +
-        '<td><span class="badge badge-info">'+(b.conductores?.flotas?.nombre||'—')+'</span></td>' +
-        '<td style="font-size:11px;color:var(--gray-600)">'+(b.tipo==='incidencia'?'Suspendido '+(b.dias_suspension||1)+'d':b.mes_referencia||'—')+'</td>' +
-        '<td style="font-weight:700;font-size:11px;color:'+diasCol+'">'+diasTxt+'</td>' +
-        '<td><span class="badge badge-'+(b.confirmado?'danger':'warn')+'">'+( b.confirmado?'Bloqueado':'Por bloquear')+'</span></td>' +
-        '<td style="display:flex;gap:4px">' +
-          (!b.confirmado?'<button class="btn btn-sm btn-danger" onclick="confirmarBloqueo(\''+b.id+'\')"><i class="ti ti-lock"></i> Bloquear</button>':'') +
-          (b.confirmado?'<button class="btn btn-sm btn-primary" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Reactivar</button>':'') +
-        '</td></tr>';
-    });
+    html += '<div class="search-bar" style="margin-bottom:10px"><i class="ti ti-search"></i><input type="text" id="bus-susp" placeholder="Buscar nombre, código o flota..." oninput="filtrarSuspensiones()" style="border:none;background:transparent;font-size:13px;flex:1;font-family:inherit;outline:none"><span class="search-count" id="cnt-susp">'+suspActivas.length+' suspensiones</span></div>';
+    html += '<div id="lista-susp" class="card" style="padding:0;overflow:hidden">';
+    html += '<table><thead><tr><th>Conductor</th><th>Flota</th><th>Motivo</th><th>Vence</th><th>Días restantes</th><th>Estado</th><th>Acción</th></tr></thead><tbody id="tbody-susp">';
+    html += renderFilasSusp(suspActivas);
     html += '</tbody></table></div>';
   }
+  window._suspActivas = suspActivas;
 
   document.getElementById('main-content').innerHTML = html;
 }
@@ -1008,13 +1031,59 @@ function renderListaPendientes(data) {
   ).join('');
 }
 
+function renderListaListos(data) {
+  return data.map(b => {
+    const motivo = b.tipo==='inspeccion' ? '✓ Inspeccionado este mes' : 'Sanción cumplida — vencía '+( b.fecha_reactivacion||'—');
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)">' +
+      '<div>' +
+        '<div style="font-size:13px;font-weight:600;color:var(--green)">'+(b.conductores?.nombre||'—')+'</div>' +
+        '<div style="font-size:11px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+' · '+(b.conductores?.flotas?.nombre||'—')+' · '+motivo+'</div>' +
+      '</div>' +
+      '<button class="btn btn-sm btn-primary" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Desbloquear</button>' +
+    '</div>';
+  }).join('');
+}
+
+function renderFilasSusp(data) {
+  const hoy = fechaHoy();
+  return data.map(b => {
+    const diff = b.fecha_reactivacion ? Math.ceil((new Date(b.fecha_reactivacion)-new Date(hoy))/864e5) : null;
+    const diasTxt = diff===null?'Indefinida':diff===0?'Vence hoy':diff+'d restantes';
+    const diasCol = diff===null?'var(--gray-400)':diff<=1?'var(--red)':'var(--amber)';
+    const rowBg = diff!==null&&diff<=1?'background:#FEF2F2':'';
+    return '<tr style="'+rowBg+'">' +
+      '<td><div style="font-weight:600">'+(b.conductores?.nombre||'—')+'</div><div style="font-size:10px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+'</div></td>' +
+      '<td><span class="badge badge-info">'+(b.conductores?.flotas?.nombre||'—')+'</span></td>' +
+      '<td style="font-size:11px;color:var(--gray-600)">'+(b.tipo==='incidencia'?'Suspendido '+(b.dias_suspension||1)+'d':'Mal estado')+'</td>' +
+      '<td style="font-size:11px">'+(b.fecha_reactivacion||'—')+'</td>' +
+      '<td style="font-weight:700;font-size:11px;color:'+diasCol+'">'+diasTxt+'</td>' +
+      '<td><span class="badge badge-'+(b.confirmado?'danger':'warn')+'">'+(b.confirmado?'Bloqueado':'Por bloquear')+'</span></td>' +
+      '<td style="display:flex;gap:4px">' +
+        (!b.confirmado?'<button class="btn btn-sm btn-danger" onclick="confirmarBloqueo(\''+b.id+'\')"><i class="ti ti-lock"></i> Bloquear</button>':'') +
+        (b.confirmado?'<button class="btn btn-sm btn-primary" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Reactivar</button>':'') +
+      '</td></tr>';
+  }).join('');
+}
+
 function filtrarPendientes() {
-  const q = (document.getElementById('bus-pend')?.value||'').toLowerCase();
-  const fil = (window._pendientesBloquear||[]).filter(c =>
-    !q || [c.nombre,c.codigo,c.flotas?.nombre,c.placa].some(f=>f?.toLowerCase().includes(q))
-  );
-  document.getElementById('cnt-pend').textContent = fil.length+' conductores';
-  document.getElementById('lista-pend').innerHTML = renderListaPendientes(fil);
+  const q=(document.getElementById('bus-pend')?.value||'').toLowerCase();
+  const fil=(window._pendientesBloquear||[]).filter(c=>!q||[c.nombre,c.codigo,c.flotas?.nombre,c.placa].some(f=>f?.toLowerCase().includes(q)));
+  document.getElementById('cnt-pend').textContent=fil.length+' conductores';
+  document.getElementById('lista-pend').innerHTML=renderListaPendientes(fil);
+}
+
+function filtrarListos() {
+  const q=(document.getElementById('bus-listos')?.value||'').toLowerCase();
+  const fil=(window._listosDesbloquear||[]).filter(b=>!q||[b.conductores?.nombre,b.conductores?.codigo,b.conductores?.flotas?.nombre].some(f=>f?.toLowerCase().includes(q)));
+  document.getElementById('cnt-listos').textContent=fil.length+' conductores';
+  document.getElementById('lista-listos').innerHTML=renderListaListos(fil);
+}
+
+function filtrarSuspensiones() {
+  const q=(document.getElementById('bus-susp')?.value||'').toLowerCase();
+  const fil=(window._suspActivas||[]).filter(b=>!q||[b.conductores?.nombre,b.conductores?.codigo,b.conductores?.flotas?.nombre].some(f=>f?.toLowerCase().includes(q)));
+  document.getElementById('cnt-susp').textContent=fil.length+' suspensiones';
+  document.getElementById('tbody-susp').innerHTML=renderFilasSusp(fil);
 }
 
 async function guardarFechaCorte() {
@@ -1029,8 +1098,7 @@ async function bloquearPorInsp(condId, nombre) {
   const mes = new Date().toISOString().slice(0,7);
   await sb.from('bloqueos').insert({
     conductor_id:condId, tipo:'inspeccion', confirmado:true,
-    fecha_bloqueo:new Date().toISOString().slice(0,10),
-    inspector_bloqueo:CP?.nombre||'Admin',
+    fecha_bloqueo:fechaHoy(), inspector_bloqueo:CP?.nombre||'Admin',
     mes_referencia:mes, dias_suspension:0, fecha_reactivacion:null
   });
   renderBloqueos();
@@ -1041,7 +1109,7 @@ async function bloquearTodos() {
   if(!pendientes.length) return;
   if(!confirm('¿Bloquear a los '+pendientes.length+' conductores sin inspección?')) return;
   const mes = new Date().toISOString().slice(0,7);
-  const fecha = new Date().toISOString().slice(0,10);
+  const fecha = fechaHoy();
   let ok=0;
   for(const c of pendientes){
     const {error} = await sb.from('bloqueos').insert({
@@ -1054,6 +1122,7 @@ async function bloquearTodos() {
   alert('✅ '+ok+' conductores bloqueados');
   renderBloqueos();
 }
+
 
 
 async function abrirFormBloqueo() {
@@ -1852,7 +1921,7 @@ async function abrirFormIncidencia() {
     '<div class="form-field" style="margin-bottom:10px"><label class="form-label2">Descripción</label><textarea id="ni-desc" rows="2" placeholder="Describe la incidencia..."></textarea></div>' +
     '<div class="form-grid">' +
       '<div class="form-field"><label class="form-label2">Acción / Sanción</label><select id="ni-accion" onchange="checkAccionInc()">'+acciones.map(o=>'<option>'+o+'</option>').join('')+'</select></div>' +
-      '<div class="form-field"><label class="form-label2">Fecha</label><input type="date" id="ni-fecha" value="'+new Date().toISOString().slice(0,10)+'"></div>' +
+      '<div class="form-field"><label class="form-label2">Fecha</label><input type="date" id="ni-fecha" value="'+fechaHoy()+'"></div>' +
     '</div>' +
     '<div id="ni-suspension-info" style="display:none;padding:9px;background:var(--red-bg);border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--red);font-weight:600"></div>' +
     '<div style="display:flex;gap:8px">' +
