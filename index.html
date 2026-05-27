@@ -216,14 +216,21 @@ const NAV_INSPECTOR = [
   {id:'inspeccion',label:'Nueva inspección',icon:'ti-clipboard-check'},
   {id:'buscar',label:'Buscar conductor',icon:'ti-search'},
   {id:'bloqueos',label:'Bloqueos',icon:'ti-lock',badge:true},
-  {id:'activos',label:'Activos',icon:'ti-package'},
+  {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle',badge:true},
+  {id:'incidencias',label:'Incidencias',icon:'ti-exclamation-circle'},
+  {id:'activos',label:'Activos + SLA',icon:'ti-package'},
+  {id:'reportes',label:'Reportes',icon:'ti-chart-bar'},
 ];
 const NAV_EJECUTIVO = [
   {id:'dashboard',label:'Dashboard',icon:'ti-layout-dashboard'},
-  {id:'inspeccion',label:'Inspección',icon:'ti-clipboard-check'},
+  {id:'inspeccion',label:'Nueva inspección',icon:'ti-clipboard-check'},
   {id:'buscar',label:'Buscar conductor',icon:'ti-search'},
-  {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle'},
+  {id:'bloqueos',label:'Bloqueos',icon:'ti-lock',badge:true},
+  {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle',badge:true},
   {id:'incidencias',label:'Incidencias',icon:'ti-exclamation-circle'},
+  {id:'activos',label:'Activos + SLA',icon:'ti-package'},
+  {id:'reportes',label:'Reportes',icon:'ti-chart-bar'},
+  {id:'padron',label:'Gestión padrón',icon:'ti-upload'},
 ];
 
 function buildNav(rol) {
