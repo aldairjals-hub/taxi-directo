@@ -283,40 +283,103 @@ function closeModal() {
 // --- DASHBOARD ----------------------------
 async function renderDashboard() {
   const mes = new Date().toISOString().slice(0,7);
-  const [r1,r2,r3,r4] = await Promise.all([
+  const hoy = new Date().toISOString().slice(0,10);
+  const ayer = new Date(Date.now()-864e5).toISOString().slice(0,10);
+  const [r1,r2,r3,r4,r5,r6,r7] = await Promise.all([
     sb.from('conductores').select('*',{count:'exact',head:true}).neq('estado','desactivado'),
     sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('mes_referencia',mes),
     sb.from('bloqueos').select('*',{count:'exact',head:true}).eq('confirmado',true).eq('subsanado',false),
     sb.from('incidencias').select('*',{count:'exact',head:true}).eq('estado','abierta'),
+    sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('fecha',hoy),
+    sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('fecha',ayer),
+    sb.from('compromisos').select('*',{count:'exact',head:true}).eq('estado','pendiente').lt('fecha_limite',hoy),
   ]);
   const total = r1.count||0, insp = r2.count||0;
+  const inspHoy = r5.count||0, inspAyer = r6.count||0;
+  const compVencidos = r7.count||0;
   const pct = total ? Math.round(insp/total*100) : 0;
-  const col = pct>=80?'var(--green)':pct>=50?'var(--amber)':'var(--red)';
+  const col = pct>=80?'var(--green)':pct>=50?'var(--amber)":'var(--red)';
   const mesLabel = new Date().toLocaleString('es-PE',{month:'long',year:'numeric'});
+  const tendencia = inspHoy > inspAyer ? '▲' : inspHoy < inspAyer ? '▼' : '=';
+  const tendCol = inspHoy > inspAyer ? 'var(--green)' : inspHoy < inspAyer ? 'var(--red)' : 'var(--gray-400)';
+
+  // Donut SVG
+  const r=54, cx=70, cy=70, circ=2*Math.PI*r;
+  const pctFill = total>0 ? pct/100 : 0;
+  const dash = pctFill*circ;
+  const donutSvg = '<svg width="140" height="140" viewBox="0 0 140 140">'+
+    '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="#F1F5F9" stroke-width="14"/>'+
+    '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+col.replace('var(','').replace(')','')+'" stroke-width="14" stroke-dasharray="'+dash+' '+circ+'" stroke-dashoffset="'+( circ/4)+'" stroke-linecap="round" style="transition:stroke-dasharray .6s"/>'+
+    '<text x="'+cx+'" y="'+( cy-6)+'" text-anchor="middle" font-size="20" font-weight="700" fill="'+col.replace('var(','').replace(')','')+'">'+pct+'%</text>'+
+    '<text x="'+cx+'" y="'+( cy+12)+'" text-anchor="middle" font-size="10" fill="#94A3B8">avance</text>'+
+    '<text x="'+cx+'" y="'+( cy+26)+'" text-anchor="middle" font-size="10" fill="#94A3B8">'+insp+'/'+total+'</text>'+
+  '</svg>';
 
   document.getElementById('main-content').innerHTML =
     '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Dashboard — '+mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1)+'</h2>' +
-    '<div class="metrics-grid">' +
-      '<div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-clipboard-check"></i></div><div class="metric-val">'+insp+'</div><div class="metric-lbl">Inspecciones este mes</div><div class="metric-sub">de '+total+' en padrón</div></div>' +
-      '<div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-chart-pie"></i></div><div class="metric-val" style="color:'+col+'">'+pct+'%</div><div class="metric-lbl">Avance mensual</div><div class="metric-sub">'+(total-insp)+' pendientes</div></div>' +
-      '<div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-lock"></i></div><div class="metric-val" style="color:var(--red)">'+(r3.count||0)+'</div><div class="metric-lbl">Bloqueados activos</div></div>' +
-      '<div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-exclamation-circle"></i></div><div class="metric-val">'+(r4.count||0)+'</div><div class="metric-lbl">Incidencias abiertas</div></div>' +
+    // Fila 1: métricas
+    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:14px">' +
+      '<div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-clipboard-check"></i></div><div class="metric-val">'+insp+'</div><div class="metric-lbl">Inspeccionados</div><div class="metric-sub">de '+total+' en padrón</div></div>' +
+      '<div class="metric-card"><div class="metric-icon ic-green"><i class="ti ti-calendar-check"></i></div><div class="metric-val">'+inspHoy+'</div><div class="metric-lbl">Hoy</div><div class="metric-sub" style="color:'+tendCol+'">'+tendencia+' '+inspAyer+' ayer</div></div>' +
+      '<div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-lock"></i></div><div class="metric-val" style="color:var(--red)">'+( r3.count||0)+'</div><div class="metric-lbl">Bloqueados</div></div>' +
+      '<div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-exclamation-circle"></i></div><div class="metric-val">'+( r4.count||0)+'</div><div class="metric-lbl">Incidencias abiertas</div></div>' +
+      '<div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-alert-triangle"></i></div><div class="metric-val" style="color:var(--red)">'+compVencidos+'</div><div class="metric-lbl">Compromisos vencidos</div></div>' +
     '</div>' +
-    '<div class="card"><div class="card-title">Avance general</div>' +
-      '<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px"><span>'+insp+' de '+total+' conductores</span><span style="font-weight:700;color:'+col+'">'+pct+'%</span></div>' +
-      '<div class="progress-bg"><div class="progress-fill" style="width:'+pct+'%;background:'+col+'"></div></div>' +
-    '</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+    // Fila 2: donut + inspector + flota
+    '<div style="display:grid;grid-template-columns:160px 1fr 1fr;gap:14px;margin-bottom:14px">' +
+      '<div class="card" style="margin-bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center">'+
+        '<div class="card-title" style="text-align:center">Avance del mes</div>'+
+        donutSvg+
+        '<div style="font-size:11px;color:var(--gray-400);margin-top:6px;text-align:center">'+( total-insp)+' pendientes</div>'+
+      '</div>'+
       '<div class="card" style="margin-bottom:0"><div class="card-title">Desempeño por inspector</div><div id="dash-insp"><div class="loader" style="padding:20px"></div></div></div>' +
       '<div class="card" style="margin-bottom:0"><div class="card-title">Avance por flota</div><div id="dash-flota"><div class="loader" style="padding:20px"></div></div></div>' +
-    '</div>';
+    '</div>' +
+    // Fila 3: timeline
+    '<div class="card" style="margin-bottom:0"><div class="card-title">Inspecciones esta semana <span id="dash-timeline-label" style="font-size:10px;color:var(--gray-400);font-weight:400"></span></div><div id="dash-timeline"><div class="loader" style="padding:20px"></div></div></div>';
 
-  // Badges
   if(document.getElementById('badge-bloqueos')) document.getElementById('badge-bloqueos').textContent = r3.count||0;
   if(document.getElementById('badge-compromisos')) document.getElementById('badge-compromisos').textContent = r4.count||0;
-
-  // Load inspector + flota breakdown
   loadDashBreakdown(mes, total);
+  loadDashTimeline();
+}
+
+async function loadDashTimeline() {
+  // Últimos 7 días
+  const dias = [];
+  for(let i=6;i>=0;i--){
+    const d = new Date(Date.now()-i*864e5);
+    dias.push(d.toISOString().slice(0,10));
+  }
+  const {data:inspSemana} = await sb.from('inspecciones').select('fecha').gte('fecha',dias[0]).lte('fecha',dias[6]);
+  const porDia = {};
+  dias.forEach(d=>porDia[d]=0);
+  (inspSemana||[]).forEach(i=>{ if(porDia[i.fecha]!==undefined) porDia[i.fecha]++; });
+  const vals = dias.map(d=>porDia[d]);
+  const maxVal = Math.max(...vals,1);
+  const el = document.getElementById('dash-timeline');
+  const lbl = document.getElementById('dash-timeline-label');
+  if(lbl) lbl.textContent = dias[0]+' → '+dias[6];
+  if(!el) return;
+  const W=560,H=80,pad=30;
+  const pts = vals.map((v,i)=>{
+    const x = pad + i*(W-2*pad)/6;
+    const y = H - pad - (v/maxVal)*(H-2*pad);
+    return {x,y,v,d:dias[i]};
+  });
+  const polyline = pts.map(p=>p.x+','+p.y).join(' ');
+  const area = 'M'+pts[0].x+','+H+' L'+pts.map(p=>p.x+','+p.y).join(' L')+' L'+pts[pts.length-1].x+','+H+' Z';
+  const svgContent = '<svg width="100%" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">'+
+    '<defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1A56DB" stop-opacity="0.15"/><stop offset="100%" stop-color="#1A56DB" stop-opacity="0"/></linearGradient></defs>'+
+    '<path d="'+area+'" fill="url(#tg)"/>'+
+    '<polyline points="'+polyline+'" fill="none" stroke="#1A56DB" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>'+
+    pts.map(p=>
+      '<circle cx="'+p.x+'" cy="'+p.y+'" r="4" fill="#1A56DB"/>'+
+      '<text x="'+p.x+'" y="'+( H-4)+'" text-anchor="middle" font-size="9" fill="#94A3B8">'+p.d.slice(5)+'</text>'+
+      (p.v>0?'<text x="'+p.x+'" y="'+( p.y-8)+'" text-anchor="middle" font-size="10" font-weight="700" fill="#1A56DB">'+p.v+'</text>':'')+
+    '').join('')+
+  '</svg>';
+  el.innerHTML = svgContent;
 }
 
 async function loadDashBreakdown(mes, totalConds) {
@@ -525,7 +588,16 @@ function checkCategoria(val) {
 async function guardarInsp() {
   if (!_inspCondId) { alert('Selecciona un conductor válido'); return; }
   const fecha = document.getElementById('insp-fecha').value;
-  const tipo = document.getElementById('insp-tipo').value;
+  let tipo = document.getElementById('insp-tipo').value;
+  // Si el conductor está bloqueado por inspección → forzar subsanación
+  const {data:blqCheck} = await sb.from('bloqueos').select('id').eq('conductor_id',_inspCondId).eq('tipo','inspeccion').eq('confirmado',true).eq('subsanado',false).limit(1);
+  if(blqCheck?.length && tipo==='mensual'){
+    if(confirm('⚠ Este conductor está bloqueado por no inspección.\n\n¿Registrar como SUBSANACIÓN del mes anterior y desbloquearlo automáticamente?')){
+      tipo = 'subsanacion';
+      // Desbloquear automáticamente
+      await sb.from('bloqueos').update({subsanado:true,fecha_subsanacion:fecha}).eq('id',blqCheck[0].id);
+    }
+  }
   const obs = document.getElementById('insp-obs').value;
   const mesRef = fecha.slice(0,7);
   // Collect campos - store by field name using data-nombre attribute
@@ -792,42 +864,197 @@ document.addEventListener('click', async function(e){
 <script>
 // --- BLOQUEOS -----------------------------
 async function renderBloqueos() {
-  const {data, error} = await sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false});
-  if (error) { document.getElementById('main-content').innerHTML = '<div class="card"><div class="alert alert-danger"><div class="at">Error cargando bloqueos: '+error.message+'</div></div></div>'; return; }
-  const hoy = new Date();
-  const vencenHoy = (data||[]).filter(b => b.tipo==='incidencia' && b.fecha_reactivacion && new Date(b.fecha_reactivacion)<=hoy && b.confirmado);
+  const mes = new Date().toISOString().slice(0,7);
+  const hoy = new Date().toISOString().slice(0,10);
+
+  // Cargar fecha de corte configurada
+  const {data:configData} = await sb.from('config_sistema').select('valor').eq('clave','fecha_corte_mes').single();
+  const fechaCorte = configData?.valor || '';
+
+  // Cargar datos en paralelo
+  const [{data:bloqueos,error},{data:conductores},{data:inspMes},{data:bloqueadosPorInsp}] = await Promise.all([
+    sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false}),
+    sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,flotas(nombre)').neq('estado','desactivado'),
+    sb.from('inspecciones').select('conductor_id').eq('mes_referencia',mes),
+    sb.from('bloqueos').select('conductor_id').eq('tipo','inspeccion').eq('confirmado',true).eq('subsanado',false),
+  ]);
+
+  if (error) { document.getElementById('main-content').innerHTML = '<div class="card"><div class="alert alert-danger"><div class="at">Error: '+error.message+'</div></div></div>'; return; }
+
+  const hoyDate = new Date(hoy);
+  const cortePasado = fechaCorte && new Date(fechaCorte) < hoyDate;
+  const inspIds = new Set((inspMes||[]).map(i=>i.conductor_id));
+  const bloqInspIds = new Set((bloqueadosPorInsp||[]).map(b=>b.conductor_id));
+
+  // Conductores sin inspección (pendientes de bloquear por fecha corte)
+  const sinInsp = cortePasado ? (conductores||[]).filter(c => !inspIds.has(c.id) && !bloqInspIds.has(c.id)) : [];
+  // Conductores bloqueados por inspección que YA subsanaron (listos para desbloquear)
+  const listos = (bloqueos||[]).filter(b => b.tipo==='inspeccion' && inspIds.has(b.conductor_id));
+  // Bloqueos normales (incidencias, mal estado)
+  const normales = (bloqueos||[]).filter(b => b.tipo!=='inspeccion');
+  // Bloqueos por inspección aún pendientes
+  const bloqInsp = (bloqueos||[]).filter(b => b.tipo==='inspeccion' && !inspIds.has(b.conductor_id));
+
+  // Badges
+  if(document.getElementById('badge-bloqueos')) document.getElementById('badge-bloqueos').textContent = (bloqueos||[]).length;
 
   let html = '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Bloqueos y suspensiones</h2>';
-  if (vencenHoy.length) html += '<div class="alert alert-success"><div class="at"><i class="ti ti-bell"></i> '+vencenHoy.length+' suspensión(es) cumplida(s) hoy — reactivar conductor</div></div>';
-  html += '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-danger btn-sm" onclick="abrirFormBloqueo()"><i class="ti ti-plus"></i> Nueva suspensión / bloqueo</button></div>';
-  html += '<div class="card"><table><thead><tr><th>Conductor</th><th>Placa · Vehículo</th><th>Flota</th><th>Tipo</th><th>Detalle</th><th>Días restantes</th><th>Estado</th><th>Acción</th></tr></thead><tbody>';
-  if (!data?.length) {
-    html += '<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:20px">Sin bloqueos activos ✓</td></tr>';
+
+  // ── Configuración fecha corte ──
+  html += '<div class="card" style="margin-bottom:14px;border-color:'+(fechaCorte?'var(--blue)':'var(--amber)'+'">')+'">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
+  html += '<div><div style="font-size:13px;font-weight:700;margin-bottom:3px"><i class="ti ti-calendar-event" style="color:var(--blue)"></i> Fecha de corte — '+mes+'</div>';
+  html += '<div style="font-size:11px;color:var(--gray-400)">Al pasar esta fecha, el sistema identifica conductores sin inspección</div></div>';
+  html += '<div style="display:flex;align-items:center;gap:8px">';
+  html += '<input type="date" id="input-fecha-corte" value="'+(fechaCorte||'')+'" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--blue);border-radius:7px">';
+  html += '<button class="btn btn-primary btn-sm" onclick="guardarFechaCorte()"><i class="ti ti-check"></i> Guardar</button>';
+  html += '</div></div>';
+  if(fechaCorte) html += '<div style="font-size:11px;margin-top:8px;color:'+(cortePasado?'var(--red)':'var(--green)')+'"><i class="ti ti-'+(cortePasado?'alert-circle':'clock')+'"></i> '+( cortePasado?'Fecha de corte vencida — hay conductores pendientes de bloquear':'Fecha de corte vigente: '+fechaCorte)+'</div>';
+  html += '</div>';
+
+  // ── SECCIÓN 1: Pendientes de bloquear (ROJO) ──
+  html += '<div class="card" style="margin-bottom:14px;border-color:#FCA5A5">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+  html += '<div><div style="font-size:14px;font-weight:700;color:var(--red)"><i class="ti ti-lock"></i> Pendientes de bloquear <span style="background:var(--red);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px">'+sinInsp.length+'</span></div>';
+  html += '<div style="font-size:11px;color:var(--gray-400);margin-top:2px">Conductores sin inspección del mes — el inspector debe bloquearlos en el sistema</div></div>';
+  if(sinInsp.length) html += '<button class="btn btn-sm btn-danger" onclick="bloquearTodos()"><i class="ti ti-lock"></i> Bloquear todos ('+sinInsp.length+')</button>';
+  html += '</div>';
+
+  if(!cortePasado) {
+    html += '<div style="text-align:center;padding:16px;color:var(--gray-400);font-size:12px"><i class="ti ti-calendar"></i> Configura la fecha de corte para ver los pendientes</div>';
+  } else if(!sinInsp.length) {
+    html += '<div style="text-align:center;padding:16px;color:var(--green);font-size:12px"><i class="ti ti-circle-check"></i> ¡Todos los conductores tienen inspección este mes!</div>';
   } else {
-    data.forEach(b => {
-      let diasTxt = 'Hasta subsanar', diasCol = 'var(--red)';
-      if (b.tipo==='incidencia' && b.fecha_reactivacion) {
-        const diff = Math.ceil((new Date(b.fecha_reactivacion)-hoy)/864e5);
-        diasTxt = diff<=0 ? 'Vence hoy' : diff+'d restantes';
-        diasCol = diff<=1 ? 'var(--red)' : 'var(--amber)';
+    html += '<div class="search-bar" style="margin-bottom:10px"><i class="ti ti-search"></i><input type="text" id="bus-pend" placeholder="Buscar por nombre, código o flota..." oninput="filtrarPendientes()" style="border:none;background:transparent;font-size:13px;flex:1;font-family:inherit;outline:none"><span class="search-count" id="cnt-pend">'+sinInsp.length+' conductores</span></div>';
+    html += '<div id="lista-pend">';
+    html += renderListaPendientes(sinInsp);
+    html += '</div>';
+  }
+  html += '</div>';
+  window._pendientesBloquear = sinInsp;
+
+  // ── SECCIÓN 2: Listos para desbloquear (VERDE) ──
+  html += '<div class="card" style="margin-bottom:14px;border-color:#6EE7B7">';
+  html += '<div style="font-size:14px;font-weight:700;color:var(--green);margin-bottom:8px"><i class="ti ti-circle-check"></i> Listos para desbloquear <span style="background:var(--green);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px">'+listos.length+'</span></div>';
+  html += '<div style="font-size:11px;color:var(--gray-400);margin-bottom:12px">Estaban bloqueados por inspección y ya la realizaron — reactivar ahora</div>';
+  if(!listos.length) {
+    html += '<div style="text-align:center;padding:12px;color:var(--gray-400);font-size:12px">Sin conductores listos para desbloquear</div>';
+  } else {
+    html += listos.map(b => '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)">' +
+      '<div><div style="font-size:13px;font-weight:600;color:var(--green)">✓ '+(b.conductores?.nombre||'—')+'</div>' +
+      '<div style="font-size:11px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+' · '+(b.conductores?.flotas?.nombre||'—')+' · Ya inspeccionado este mes</div></div>' +
+      '<button class="btn btn-sm btn-primary" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Desbloquear</button>' +
+    '</div>').join('');
+  }
+  html += '</div>';
+
+  // ── SECCIÓN 3: Bloqueados por inspección (pendiente subsanar) ──
+  if(bloqInsp.length) {
+    html += '<div class="card" style="margin-bottom:14px">';
+    html += '<div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:8px"><i class="ti ti-clock"></i> Bloqueados por inspección — pendiente subsanar <span style="background:var(--amber);color:#fff;border-radius:20px;padding:2px 8px;font-size:11px">'+bloqInsp.length+'</span></div>';
+    html += bloqInsp.map(b => '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--gray-100)">' +
+      '<div><div style="font-size:12px;font-weight:600">'+(b.conductores?.nombre||'—')+'</div>' +
+      '<div style="font-size:11px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+' · '+(b.conductores?.flotas?.nombre||'—')+'</div></div>' +
+      '<button class="btn btn-sm" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Reactivar</button>' +
+    '</div>').join('');
+    html += '</div>';
+  }
+
+  // ── SECCIÓN 4: Suspensiones normales ──
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+  html += '<div style="font-size:14px;font-weight:700">Suspensiones por incidencia / mal estado</div>';
+  html += '<button class="btn btn-danger btn-sm" onclick="abrirFormBloqueo()"><i class="ti ti-plus"></i> Nueva suspensión</button>';
+  html += '</div>';
+
+  if(!normales.length) {
+    html += '<div class="card"><div style="text-align:center;padding:16px;color:var(--gray-400);font-size:12px">Sin suspensiones activas ✓</div></div>';
+  } else {
+    const hoyD = new Date();
+    html += '<div class="card"><table><thead><tr><th>Conductor</th><th>Flota</th><th>Motivo</th><th>Días restantes</th><th>Estado</th><th>Acción</th></tr></thead><tbody>';
+    normales.forEach(b => {
+      let diasTxt='Hasta subsanar', diasCol='var(--red)';
+      if(b.fecha_reactivacion){
+        const diff=Math.ceil((new Date(b.fecha_reactivacion)-hoyD)/864e5);
+        diasTxt=diff<=0?'Vence hoy':diff+'d restantes';
+        diasCol=diff<=1?'var(--red)':'var(--amber)';
       }
       html += '<tr>' +
         '<td><div style="font-weight:600">'+(b.conductores?.nombre||'—')+'</div><div style="font-size:10px;color:var(--gray-400)">'+(b.conductores?.codigo||'—')+'</div></td>' +
-        '<td style="font-size:11px">'+(b.conductores?.placa||'—')+' · '+(b.conductores?.vehiculo||'—')+'</td>' +
-        '<td>'+badge(b.conductores?.flotas?.nombre||'—','info')+'</td>' +
-        '<td>'+badge(b.tipo==='inspeccion'?'Sin inspección':'Suspensión',b.tipo==='inspeccion'?'danger':'warn')+'</td>' +
+        '<td><span class="badge badge-info">'+(b.conductores?.flotas?.nombre||'—')+'</span></td>' +
         '<td style="font-size:11px;color:var(--gray-600)">'+(b.tipo==='incidencia'?'Suspendido '+(b.dias_suspension||1)+'d':b.mes_referencia||'—')+'</td>' +
         '<td style="font-weight:700;font-size:11px;color:'+diasCol+'">'+diasTxt+'</td>' +
-        '<td>'+badge(b.confirmado?'Bloqueado':'Por bloquear',b.confirmado?'danger':'warn')+'</td>' +
-        '<td style="display:flex;gap:4px;flex-wrap:wrap">' +
-          (!b.confirmado ? '<button class="btn btn-sm btn-danger" onclick="confirmarBloqueo(\''+b.id+'\')"><i class="ti ti-lock"></i> Bloquear</button>' : '') +
-          (b.confirmado ? '<button class="btn btn-sm btn-primary" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Reactivar</button>' : '') +
+        '<td><span class="badge badge-'+(b.confirmado?'danger':'warn')+'">'+( b.confirmado?'Bloqueado':'Por bloquear')+'</span></td>' +
+        '<td style="display:flex;gap:4px">' +
+          (!b.confirmado?'<button class="btn btn-sm btn-danger" onclick="confirmarBloqueo(\''+b.id+'\')"><i class="ti ti-lock"></i> Bloquear</button>':'') +
+          (b.confirmado?'<button class="btn btn-sm btn-primary" onclick="reactivar(\''+b.id+'\',\''+( b.conductores?.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-check"></i> Reactivar</button>':'') +
         '</td></tr>';
     });
+    html += '</tbody></table></div>';
   }
-  html += '</tbody></table></div>';
+
   document.getElementById('main-content').innerHTML = html;
 }
+
+function renderListaPendientes(data) {
+  if(!data.length) return '<div style="text-align:center;padding:16px;color:var(--green);font-size:12px">¡Sin pendientes!</div>';
+  return data.map(c =>
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--gray-100)">' +
+      '<div>' +
+        '<div style="font-size:12px;font-weight:600;color:var(--red)">'+(c.nombre||'—')+'</div>' +
+        '<div style="font-size:11px;color:var(--gray-400)">'+(c.codigo||'—')+' · '+(c.flotas?.nombre||'—')+' · '+(c.placa||'—')+'</div>' +
+      '</div>' +
+      '<button class="btn btn-sm btn-danger" onclick="bloquearPorInsp(\''+c.id+'\',\''+( c.nombre||'').replace(/'/g,'')+'\')"><i class="ti ti-lock"></i> Bloquear</button>' +
+    '</div>'
+  ).join('');
+}
+
+function filtrarPendientes() {
+  const q = (document.getElementById('bus-pend')?.value||'').toLowerCase();
+  const fil = (window._pendientesBloquear||[]).filter(c =>
+    !q || [c.nombre,c.codigo,c.flotas?.nombre,c.placa].some(f=>f?.toLowerCase().includes(q))
+  );
+  document.getElementById('cnt-pend').textContent = fil.length+' conductores';
+  document.getElementById('lista-pend').innerHTML = renderListaPendientes(fil);
+}
+
+async function guardarFechaCorte() {
+  const val = document.getElementById('input-fecha-corte').value;
+  if(!val) { alert('Selecciona una fecha'); return; }
+  await sb.from('config_sistema').upsert({clave:'fecha_corte_mes',valor:val,updated_at:new Date().toISOString()});
+  renderBloqueos();
+}
+
+async function bloquearPorInsp(condId, nombre) {
+  if(!confirm('¿Bloquear a '+nombre+' por no inspección?')) return;
+  const mes = new Date().toISOString().slice(0,7);
+  await sb.from('bloqueos').insert({
+    conductor_id:condId, tipo:'inspeccion', confirmado:true,
+    fecha_bloqueo:new Date().toISOString().slice(0,10),
+    inspector_bloqueo:CP?.nombre||'Admin',
+    mes_referencia:mes, dias_suspension:0, fecha_reactivacion:null
+  });
+  renderBloqueos();
+}
+
+async function bloquearTodos() {
+  const pendientes = window._pendientesBloquear||[];
+  if(!pendientes.length) return;
+  if(!confirm('¿Bloquear a los '+pendientes.length+' conductores sin inspección?')) return;
+  const mes = new Date().toISOString().slice(0,7);
+  const fecha = new Date().toISOString().slice(0,10);
+  let ok=0;
+  for(const c of pendientes){
+    const {error} = await sb.from('bloqueos').insert({
+      conductor_id:c.id, tipo:'inspeccion', confirmado:true,
+      fecha_bloqueo:fecha, inspector_bloqueo:CP?.nombre||'Admin',
+      mes_referencia:mes, dias_suspension:0
+    });
+    if(!error) ok++;
+  }
+  alert('✅ '+ok+' conductores bloqueados');
+  renderBloqueos();
+}
+
 
 async function abrirFormBloqueo() {
   let condData = null;
@@ -1171,12 +1398,14 @@ async function renderReportes(){
   if (!window._reporteMes) window._reporteMes = mesActual;
   const mesSeleccionado = window._reporteMes;
 
-  const [{data:mesesData},{data:conds},{data:inspMes},{data:camposDB}] = await Promise.all([
+  const [{data:mesesData},{data:conds},{data:inspMes},{data:camposDB},{data:bloqueados}] = await Promise.all([
     sb.from('inspecciones').select('mes_referencia').order('mes_referencia',{ascending:false}),
     sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,categoria,estado,flotas(nombre)').neq('estado','desactivado'),
     sb.from('inspecciones').select('conductor_id,campos_evaluados,score_experiencia,fecha').eq('mes_referencia',mesSeleccionado).order('fecha',{ascending:false}),
     sb.from('formulario_campos').select('id,nombre').eq('formulario','inspeccion'),
+    sb.from('bloqueos').select('conductor_id').eq('confirmado',true).eq('subsanado',false),
   ]);
+  window._bloqueadosIds = new Set((bloqueados||[]).map(b=>b.conductor_id));
 
   const mesesSet = [...new Set((mesesData||[]).map(i=>i.mes_referencia))];
   const fieldDefs = {};
@@ -1186,8 +1415,7 @@ async function renderReportes(){
   (inspMes||[]).forEach(i=>{ if(!ultimaMes[i.conductor_id]) ultimaMes[i.conductor_id]=i; });
 
   // Estadísticas
-  const porComb={}, porFlotaInsp={};
-  const manijas={'Delantera izquierda':{si:0,no:0},'Delantera derecha':{si:0,no:0},'Trasera izquierda':{si:0,no:0},'Trasera derecha':{si:0,no:0}};
+  const porComb={}, porFlotaInsp={}, porTanque={};
 
   (conds||[]).forEach(c=>{
     const fl = c.flotas?.nombre||'Sin flota';
@@ -1201,10 +1429,7 @@ async function renderReportes(){
           const nombre = fieldDefs[k]||k;
           const nl = nombre.toLowerCase();
           if(nl.includes('combustible')){ const val=Array.isArray(v)?v.join(', '):String(v); porComb[val]=(porComb[val]||0)+1; }
-          if(nl.includes('delantera izquierda')) manijas['Delantera izquierda'][v==='si'?'si':'no']++;
-          if(nl.includes('delantera derecha')) manijas['Delantera derecha'][v==='si'?'si':'no']++;
-          if(nl.includes('trasera izquierda')) manijas['Trasera izquierda'][v==='si'?'si':'no']++;
-          if(nl.includes('trasera derecha')) manijas['Trasera derecha'][v==='si'?'si':'no']++;
+          if(nl.includes('tanque')){ const val=Array.isArray(v)?v.join(', '):String(v); if(val) porTanque[val]=(porTanque[val]||0)+1; }
         });
       }
     }
@@ -1214,21 +1439,7 @@ async function renderReportes(){
   window._reporteUltimaMes = ultimaMes;
   window._reporteFieldDefs = fieldDefs;
   window._reportePorComb = porComb;
-  // Recopilar cabeceras únicas
-  const cabValues = {};
-  (conds||[]).forEach(c=>{
-    const insp = ultimaMes[c.id];
-    if(insp?.campos_evaluados){
-      Object.entries(insp.campos_evaluados).forEach(([k,v])=>{
-        const nombre = fieldDefs[k]||k;
-        if(nombre.toLowerCase().includes('cabecera') && v){
-          const val = Array.isArray(v)?v.join(', '):String(v);
-          cabValues[val] = (cabValues[val]||0)+1;
-        }
-      });
-    }
-  });
-  window._reporteCabValues = cabValues;
+  window._reportePorTanque = porTanque;
 
   const totalInsp = Object.keys(ultimaMes).length;
   const totalConds = conds?.length||0;
@@ -1264,30 +1475,65 @@ async function renderReportes(){
     }).join('') +
     '</div></div>';
 
+  // Pie chart helper
+  function makePie(data, colors, size) {
+    const total = Object.values(data).reduce((a,b)=>a+b,0)||1;
+    const entries = Object.entries(data).sort((a,b)=>b[1]-a[1]);
+    let angle = -Math.PI/2;
+    const cx=size/2, cy=size/2, r=size/2-10;
+    let slices = '';
+    entries.forEach(([k,v],i) => {
+      const sweep = (v/total)*2*Math.PI;
+      const x1=cx+r*Math.cos(angle), y1=cy+r*Math.sin(angle);
+      const x2=cx+r*Math.cos(angle+sweep), y2=cy+r*Math.sin(angle+sweep);
+      const large = sweep>Math.PI?1:0;
+      slices += '<path d="M'+cx+','+cy+' L'+x1+','+y1+' A'+r+','+r+' 0 '+large+',1 '+x2+','+y2+' Z" fill="'+colors[i%colors.length]+'" stroke="#fff" stroke-width="2"><title>'+k+': '+v+' ('+Math.round(v/total*100)+'%)</title></path>';
+      angle += sweep;
+    });
+    return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+slices+'</svg>';
+  }
+
+  const COLORS = ['#1A56DB','#0F6E56','#D97706','#7C3AED','#B91C1C','#0369A1','#374151'];
+
   // Cards estadísticas
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:16px">';
 
-  // Combustible
+  // Combustible con pie
   const totalComb = Object.values(porComb).reduce((a,b)=>a+b,0)||1;
   html += '<div class="card" style="margin-bottom:0"><div class="card-title"><i class="ti ti-gas-station" style="color:var(--blue)"></i> Tipo de combustible</div>';
   if(Object.keys(porComb).length){
-    html += Object.entries(porComb).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
+    html += '<div style="display:flex;gap:14px;align-items:center">';
+    html += '<div style="flex-shrink:0">'+makePie(porComb,COLORS,100)+'</div>';
+    html += '<div style="flex:1">';
+    html += Object.entries(porComb).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>{
       const pct=Math.round(v/totalComb*100);
-      return '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:12px"><span>'+k+'</span><strong>'+v+' <span style="color:var(--gray-400);font-weight:400">('+pct+'%)</span></strong></div>' +
-        '<div class="progress-bg"><div class="progress-fill" style="width:'+pct+'%;background:var(--blue)"></div></div></div>';
+      return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px">' +
+        '<div style="width:10px;height:10px;border-radius:2px;background:'+COLORS[i%COLORS.length]+';flex-shrink:0"></div>' +
+        '<span style="flex:1;color:var(--gray-600)">'+k+'</span>' +
+        '<strong>'+v+'</strong><span style="color:var(--gray-400)">('+pct+'%)</span>' +
+      '</div>';
     }).join('');
+    html += '</div></div>';
   } else html += '<p style="color:var(--gray-400);font-size:12px;padding:8px 0">Sin datos para este mes</p>';
   html += '</div>';
 
-  // Manijas
-  html += '<div class="card" style="margin-bottom:0"><div class="card-title"><i class="ti ti-hand-click" style="color:var(--blue)"></i> Manijas eléctricas</div>';
-  html += Object.entries(manijas).map(([k,v])=>{
-    const total=v.si+v.no; const pct=total>0?Math.round(v.si/total*100):0;
-    return '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">' +
-      '<span>'+k+'</span>' +
-      '<span><strong style="color:var(--green)">'+v.si+' ✓</strong> <span style="color:var(--gray-400)">/ '+v.no+' ✗</span>'+(total>0?' <span style="color:var(--gray-400)">('+pct+'%)</span>':'')+'</span>' +
-      '</div><div class="progress-bg"><div class="progress-fill" style="width:'+pct+'%;background:var(--green)"></div></div></div>';
-  }).join('');
+  // Tipo de tanque con pie
+  const totalTanque = Object.values(porTanque).reduce((a,b)=>a+b,0)||1;
+  html += '<div class="card" style="margin-bottom:0"><div class="card-title"><i class="ti ti-propeller" style="color:var(--blue)"></i> Tipo de tanque</div>';
+  if(Object.keys(porTanque).length){
+    html += '<div style="display:flex;gap:14px;align-items:center">';
+    html += '<div style="flex-shrink:0">'+makePie(porTanque,COLORS,100)+'</div>';
+    html += '<div style="flex:1">';
+    html += Object.entries(porTanque).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=>{
+      const pct=Math.round(v/totalTanque*100);
+      return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px">' +
+        '<div style="width:10px;height:10px;border-radius:2px;background:'+COLORS[i%COLORS.length]+';flex-shrink:0"></div>' +
+        '<span style="flex:1;color:var(--gray-600)">'+k+'</span>' +
+        '<strong>'+v+'</strong><span style="color:var(--gray-400)">('+pct+'%)</span>' +
+      '</div>';
+    }).join('');
+    html += '</div></div>';
+  } else html += '<p style="color:var(--gray-400);font-size:12px;padding:8px 0">Sin datos para este mes</p>';
   html += '</div>';
   html += '</div>';
 
@@ -1302,10 +1548,12 @@ async function renderReportes(){
   html += '<select id="f-flota" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todas las flotas</option><option>Latam</option><option>Sky</option><option>Jetsmart</option><option>Aeropuerto</option><option>Urbano</option><option>Jockey Plaza</option><option>Bellavista</option></select>';
   html += '<select id="f-insp" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Con y sin inspección</option><option value="si">Con inspección</option><option value="no">Sin inspección</option></select>';
   const combOpts = Object.keys(window._reportePorComb||{}).map(k=>'<option value="'+k+'">'+k+'</option>').join('');
-  html += '<select id="f-comb" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todos los combustibles</option>'+combOpts+'</select>';
-  const cabOpts = Object.keys(window._reporteCabValues||{}).map(k=>'<option value="'+k+'">'+k+'</option>').join('');
-  html += '<select id="f-cab" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todas las cabeceras</option>'+cabOpts+'</select>';
-  html += '<input type="text" id="f-busq" placeholder="Nombre, código o placa..." oninput="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit;width:200px">';
+  html += '<select id="f-comb" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todo combustible</option>'+combOpts+'</select>';
+  const tanqueOpts = Object.keys(window._reportePorTanque||{}).map(k=>'<option value="'+k+'">'+k+'</option>').join('');
+  html += '<select id="f-tanque" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todo tipo tanque</option>'+tanqueOpts+'</select>';
+  html += '<select id="f-score" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Todo score</option><option value="alto">Score alto (≥80%)</option><option value="medio">Score medio (60-79%)</option><option value="bajo">Score bajo (<60%)</option></select>';
+  html += '<select id="f-bloqueo" onchange="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit"><option value="">Con/sin bloqueo</option><option value="si">Con bloqueo activo</option><option value="no">Sin bloqueo</option></select>';
+  html += '<input type="text" id="f-busq" placeholder="Nombre, código o placa..." oninput="aplicarFiltros()" style="font-size:12px;padding:7px 11px;border:1.5px solid var(--gray-200);border-radius:7px;font-family:inherit;width:180px">';
   html += '</div>';
   html += '<div style="overflow-x:auto"><table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Vehículo · Placa</th><th>Estado</th><th>Inspección '+mesSeleccionado+'</th><th>Combustible</th><th>Score</th></tr></thead><tbody id="f-tbody"></tbody></table></div>';
   html += '<div style="font-size:11px;color:var(--gray-400);margin-top:8px" id="f-count">'+(conds?.length||0)+' conductores</div></div>';
@@ -1320,7 +1568,9 @@ function aplicarFiltros(){
   const flota = document.getElementById('f-flota')?.value||'';
   const inspFiltro = document.getElementById('f-insp')?.value||'';
   const combFiltro = document.getElementById('f-comb')?.value||'';
-  const cabFiltro = document.getElementById('f-cab')?.value||'';
+  const tanqueFiltro = document.getElementById('f-tanque')?.value||'';
+  const scoreFiltro = document.getElementById('f-score')?.value||'';
+  const bloqueoFiltro = document.getElementById('f-bloqueo')?.value||'';
   const busq = (document.getElementById('f-busq')?.value||'').toLowerCase();
   let data = window._reporteData||[];
   if(cat) data=data.filter(c=>c.categoria===cat);
@@ -1337,14 +1587,26 @@ function aplicarFiltros(){
       return nombre.includes('combustible')&&val===combFiltro;
     });
   });
-  if(cabFiltro) data=data.filter(c=>{
+  if(tanqueFiltro) data=data.filter(c=>{
     const insp=window._reporteUltimaMes?.[c.id];
     if(!insp?.campos_evaluados) return false;
     return Object.entries(insp.campos_evaluados).some(([k,v])=>{
       const nombre=(window._reporteFieldDefs[k]||k).toLowerCase();
       const val=Array.isArray(v)?v.join(', '):String(v);
-      return nombre.includes('cabecera')&&val===cabFiltro;
+      return nombre.includes('tanque')&&val===tanqueFiltro;
     });
+  });
+  if(scoreFiltro) data=data.filter(c=>{
+    const insp=window._reporteUltimaMes?.[c.id];
+    const s=insp?.score_experiencia;
+    if(scoreFiltro==='alto') return s!=null&&s>=80;
+    if(scoreFiltro==='medio') return s!=null&&s>=60&&s<80;
+    if(scoreFiltro==='bajo') return s!=null&&s<60;
+    return true;
+  });
+  if(bloqueoFiltro) data=data.filter(c=>{
+    const bloq=window._bloqueadosIds||new Set();
+    return bloqueoFiltro==='si'?bloq.has(c.id):!bloq.has(c.id);
   });
   if(busq) data=data.filter(c=>[c.nombre,c.codigo,c.placa].some(f=>f?.toLowerCase().includes(busq)));
   document.getElementById('f-count').textContent = data.length+' conductores';
@@ -1980,6 +2242,86 @@ async function toggleCampo(id, activo) {
 }
 
 // ─── GESTIÓN PADRÓN ───────────────────────
+async function renderPadron() {
+  const {data:conds,count} = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,categoria,flotas(nombre)',{count:'exact'}).neq('estado','desactivado').order('nombre').limit(20);
+  document.getElementById('main-content').innerHTML =
+    '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Gestión de padrón</h2>' +
+    '<div class="card" style="max-width:540px">' +
+      '<div class="card-title">Subir nuevo padrón (CSV o XLSX)</div>' +
+      '<input type="file" id="padron-file" accept=".csv,.xlsx,.xls" onchange="procesarPadron()" style="margin-bottom:10px">' +
+      '<div id="padron-preview"></div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="card-title">Conductores activos ('+(count||0)+')</div>' +
+      '<table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Vehículo · Placa</th><th>Categoría</th><th>Estado</th></tr></thead>' +
+      '<tbody>'+(conds||[]).map(c=>'<tr><td style="font-family:monospace;font-size:10px">'+c.codigo+'</td><td style="font-weight:600">'+c.nombre+'</td><td>'+badge(c.flotas?.nombre||'—','info')+'</td><td style="font-size:11px;color:var(--gray-600)">'+(c.vehiculo||'—')+(c.placa?' · '+c.placa:'')+'</td><td>'+badge(c.categoria||'—','gray')+'</td><td>'+badge(c.estado,c.estado==='activo'?'ok':'warn')+'</td></tr>').join('')+'</tbody></table>' +
+      (count>20?'<p style="font-size:11px;color:var(--gray-400);margin-top:8px">Mostrando 20 de '+count+'. Usa "Reportes y filtros" para ver todos.</p>':'') +
+    '</div>';
+}
+
+async function procesarPadron() {
+  const file = document.getElementById('padron-file').files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const text = e.target.result;
+    const lines = text.split('\n').filter(l=>l.trim());
+    if (!lines.length) return;
+    const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+    const rows = lines.slice(1).map(l => {
+      const cols = l.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+      const obj = {};
+      headers.forEach((h,i)=>obj[h]=cols[i]||'');
+      return {
+        codigo: obj.codigo||obj['código']||obj.cod||'',
+        nombre: obj.nombre||obj.conductor||'',
+        placa: obj.placa||'',
+        vehiculo: obj.vehiculo||obj.auto||obj.carro||'',
+        flota: obj.flota||'',
+        estado: obj.estado||'activo',
+        categoria: obj.categoria||obj['categoría']||''
+      };
+    }).filter(r=>r.codigo&&r.nombre);
+    // Store rows in window variable to avoid inline JSON issues
+    window._padronRows = rows;
+    document.getElementById('padron-preview').innerHTML =
+      '<div class="alert alert-info"><div class="at"><i class="ti ti-file-check"></i> '+rows.length+' conductores detectados</div></div>' +
+      '<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows)"><i class="ti ti-upload"></i> Confirmar carga ('+rows.length+')</button>' +
+      '<button class="btn" onclick="renderPadron()">Cancelar</button></div>';
+  };
+  reader.readAsText(file,'UTF-8');
+}
+
+async function subirPadron(rows) {
+  const {data:flotas} = await sb.from('flotas').select('id,nombre');
+  // Check for placa conflicts
+  const placas = rows.map(r=>r.placa).filter(Boolean);
+  if (placas.length) {
+    const {data:conflicts} = await sb.from('compromisos').select('placa_vehiculo,conductores(nombre,codigo,estado)').in('placa_vehiculo',placas).eq('estado','pendiente');
+    const confByPlaca = {};
+    (conflicts||[]).forEach(c=>{if(c.conductores?.estado==='desactivado'){if(!confByPlaca[c.placa_vehiculo])confByPlaca[c.placa_vehiculo]=[];confByPlaca[c.placa_vehiculo].push(c.conductores?.nombre);}});
+    if (Object.keys(confByPlaca).length) {
+      let msg = '⚠ Placas con compromisos pendientes de conductores anteriores:\n\n';
+      Object.entries(confByPlaca).forEach(([pl,nms])=>{msg+=pl+': '+nms.join(', ')+'\n';});
+      msg += '\n¿Continuar con la carga?';
+      if (!confirm(msg)) return;
+    }
+  }
+  let ok=0,err=0;
+  for (const r of rows) {
+    const flota = flotas?.find(f=>f.nombre.toLowerCase().includes((r.flota||'').toLowerCase()));
+    const {error} = await sb.from('conductores').upsert({
+      codigo:r.codigo.toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,
+      placa:r.placa||null,flota_id:flota?.id||null,estado:r.estado||'activo',
+      categoria:r.categoria||null
+    },{onConflict:'codigo'});
+    error?err++:ok++;
+  }
+  document.getElementById('padron-preview').innerHTML = '<div class="alert alert-success"><div class="at">✓ '+ok+' conductores procesados'+(err?' · ⚠ '+err+' errores':'')+'</div></div>';
+  setTimeout(()=>renderPadron(),1500);
+}
+
+// ─── USUARIOS ─────────────────────────────
 async function renderUsuarios() {
   const {data:users} = await sb.from('usuarios').select('*').order('nombre');
   document.getElementById('main-content').innerHTML =
