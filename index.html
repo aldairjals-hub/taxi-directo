@@ -298,7 +298,7 @@ async function renderDashboard() {
   const inspHoy = r5.count||0, inspAyer = r6.count||0;
   const compVencidos = r7.count||0;
   const pct = total ? Math.round(insp/total*100) : 0;
-  const col = pct>=80?'var(--green)':pct>=50?'var(--amber)":'var(--red)';
+  const col = pct>=80?'var(--green)':pct>=50?'var(--amber)':'var(--red)';
   const mesLabel = new Date().toLocaleString('es-PE',{month:'long',year:'numeric'});
   const tendencia = inspHoy > inspAyer ? '▲' : inspHoy < inspAyer ? '▼' : '=';
   const tendCol = inspHoy > inspAyer ? 'var(--green)' : inspHoy < inspAyer ? 'var(--red)' : 'var(--gray-400)';
