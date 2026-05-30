@@ -206,6 +206,7 @@ const NAV_ADMIN = [
   {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle',badge:true},
   {id:'incidencias',label:'Incidencias',icon:'ti-exclamation-circle'},
   {id:'activos',label:'Activos + SLA',icon:'ti-package'},
+  {id:'alertas',label:'Alertas categoría',icon:'ti-tag',badge:true},
   {id:'constructor',label:'Constructor form.',icon:'ti-forms'},
   {id:'reportes',label:'Reportes',icon:'ti-chart-bar'},
   {id:'padron',label:'Gestión padrón',icon:'ti-upload'},
@@ -229,6 +230,7 @@ const NAV_EJECUTIVO = [
   {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle',badge:true},
   {id:'incidencias',label:'Incidencias',icon:'ti-exclamation-circle'},
   {id:'activos',label:'Activos + SLA',icon:'ti-package'},
+  {id:'alertas',label:'Alertas categoría',icon:'ti-tag',badge:true},
   {id:'reportes',label:'Reportes',icon:'ti-chart-bar'},
   {id:'padron',label:'Gestión padrón',icon:'ti-upload'},
 ];
@@ -257,6 +259,7 @@ async function loadTab(tab) {
     compromisos: renderCompromisos,
     incidencias: renderIncidencias,
     activos: renderActivos,
+    alertas: renderAlertas,
     constructor: renderConstructor,
     reportes: renderReportes,
     padron: renderPadron,
@@ -299,7 +302,7 @@ async function renderDashboard() {
   const mes = new Date().toISOString().slice(0,7);
   const hoy = new Date().toISOString().slice(0,10);
   const ayer = new Date(Date.now()-864e5).toISOString().slice(0,10);
-  const [r1,r2,r3,r4,r5,r6,r7] = await Promise.all([
+  const [r1,r2,r3,r4,r5,r6,r7,r8] = await Promise.all([
     sb.from('conductores').select('*',{count:'exact',head:true}).neq('estado','desactivado'),
     sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('mes_referencia',mes),
     sb.from('bloqueos').select('*',{count:'exact',head:true}).eq('confirmado',true).eq('subsanado',false),
@@ -307,6 +310,7 @@ async function renderDashboard() {
     sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('fecha',hoy),
     sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('fecha',ayer),
     sb.from('compromisos').select('*',{count:'exact',head:true}).eq('estado','pendiente').lt('fecha_limite',hoy),
+    sb.from('alertas_categoria').select('*',{count:'exact',head:true}).eq('estado','pendiente'),
   ]);
   const total = r1.count||0, insp = r2.count||0;
   const inspHoy = r5.count||0, inspAyer = r6.count||0;
@@ -333,12 +337,13 @@ async function renderDashboard() {
   document.getElementById('main-content').innerHTML =
     '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Dashboard — '+mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1)+'</h2>' +
     // Fila 1: métricas
-    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:14px">' +
+    '<div style="display:grid;grid-template-columns:repeat('+((['ejecutivo','admin'].includes(CP?.rol||''))?'6':'5')+',1fr);gap:12px;margin-bottom:14px">' +
       '<div class="metric-card"><div class="metric-icon ic-blue"><i class="ti ti-clipboard-check"></i></div><div class="metric-val">'+insp+'</div><div class="metric-lbl">Inspeccionados</div><div class="metric-sub">de '+total+' en padrón</div></div>' +
       '<div class="metric-card"><div class="metric-icon ic-green"><i class="ti ti-calendar-check"></i></div><div class="metric-val">'+inspHoy+'</div><div class="metric-lbl">Hoy</div><div class="metric-sub" style="color:'+tendCol+'">'+tendencia+' '+inspAyer+' ayer</div></div>' +
       '<div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-lock"></i></div><div class="metric-val" style="color:var(--red)">'+( r3.count||0)+'</div><div class="metric-lbl">Bloqueados</div></div>' +
       '<div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-exclamation-circle"></i></div><div class="metric-val">'+( r4.count||0)+'</div><div class="metric-lbl">Incidencias abiertas</div></div>' +
       '<div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-alert-triangle"></i></div><div class="metric-val" style="color:var(--red)">'+compVencidos+'</div><div class="metric-lbl">Compromisos vencidos</div></div>' +
+      ((['ejecutivo','admin'].includes(CP?.rol||''))?('<div class="metric-card" style="cursor:pointer" onclick="loadTab(\'alertas\')" title="Ver alertas de categoría"><div class="metric-icon ic-amber"><i class="ti ti-tag"></i></div><div class="metric-val" style="color:var(--amber)">'+(r8.count||0)+'</div><div class="metric-lbl">Alertas categoría</div><div class="metric-sub" style="color:var(--amber)">'+(r8.count>0?'Pendientes de revisión':'Al día ✓')+'</div></div>'):'') +
     '</div>' +
     // Fila 2: donut + inspector + flota
     '<div style="display:grid;grid-template-columns:160px 1fr 1fr;gap:14px;margin-bottom:14px">' +
@@ -355,6 +360,7 @@ async function renderDashboard() {
 
   if(document.getElementById('badge-bloqueos')) document.getElementById('badge-bloqueos').textContent = r3.count||0;
   if(document.getElementById('badge-compromisos')) document.getElementById('badge-compromisos').textContent = r4.count||0;
+  if(document.getElementById('badge-alertas')) document.getElementById('badge-alertas').textContent = r8.count||0;
   loadDashBreakdown(mes, total);
   loadDashTimeline();
 }
@@ -636,12 +642,29 @@ async function guardarInsp() {
   });
   // Score
   const score = calcScore(camposEval);
-  const {error} = await sb.from('inspecciones').insert({
+  const {data:inspData, error} = await sb.from('inspecciones').insert({
     conductor_id:_inspCondId, usuario_id:CU.id, fecha, tipo, mes_referencia:mesRef,
     observacion_general:obs, activos_solicitados:activos, campos_evaluados:camposEval,
     score_experiencia:score, categoria_sugerida:_catAlerta?.sugerida||null, alerta_categoria:!!_catAlerta
-  });
+  }).select().single();
   if (error) { alert('Error: '+error.message); return; }
+  // Register category alert if inspector suggested a different category
+  if (_catAlerta) {
+    await sb.from('alertas_categoria').insert({
+      conductor_id: _inspCondId,
+      inspeccion_id: inspData?.id || null,
+      categoria_actual: _inspCondCat,
+      categoria_sugerida: _catAlerta.sugerida,
+      categoria_observada_texto: _catAlerta.observada,
+      fecha_inspeccion: fecha,
+      inspector_id: CU.id,
+      estado: 'pendiente',
+    });
+    if(document.getElementById('badge-alertas')) {
+      var cur = parseInt(document.getElementById('badge-alertas').textContent||'0');
+      document.getElementById('badge-alertas').textContent = cur + 1;
+    }
+  }
   // Register activos
   for (const a of activos) {
     await sb.from('solicitudes_activos').insert({conductor_id:_inspCondId,inspector_id:CU.id,activo:a.activo,subpartes:a.subpartes,origen:'inspeccion',sla_target_dias:3,fecha_paso1:fecha});
@@ -2165,6 +2188,132 @@ function renderBaseView(data) {
     html += '</tbody></table></div>';
   }
   el.innerHTML = html || '<p style="color:var(--gray-400);text-align:center;padding:30px">No hay activos pendientes en ninguna base.</p>';
+}
+
+
+// --- ALERTAS CATEGORÍA -------------------
+async function renderAlertas() {
+  const rol = CP?.rol || '';
+  if (!['ejecutivo','admin'].includes(rol)) {
+    document.getElementById('main-content').innerHTML = '<div class="alert alert-warn"><div class="at">Acceso restringido a Ejecutivo y Admin.</div></div>';
+    return;
+  }
+  const {data:alertas} = await sb.from('alertas_categoria')
+    .select('*,conductores(id,nombre,codigo,categoria,flotas(nombre)),inspecciones(fecha,usuarios(nombre))')
+    .order('created_at',{ascending:false});
+
+  const pendientes = (alertas||[]).filter(a => a.estado === 'pendiente');
+  const resueltas  = (alertas||[]).filter(a => a.estado !== 'pendiente');
+
+  let html = '<h2 style="font-size:18px;font-weight:700;margin-bottom:4px">Alertas de categoría</h2>' +
+    '<p style="font-size:12px;color:var(--gray-400);margin-bottom:16px">Sugerencias de cambio de categoría detectadas durante inspecciones. Historial permanente.</p>' +
+    '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+      '<div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-tag"></i></div><div class="metric-val" style="color:var(--amber)">'+pendientes.length+'</div><div class="metric-lbl">Pendientes de revisión</div></div>' +
+      '<div class="metric-card"><div class="metric-icon ic-green"><i class="ti ti-check"></i></div><div class="metric-val" style="color:var(--green)">'+(resueltas.filter(a=>a.estado==='confirmada').length)+'</div><div class="metric-lbl">Confirmadas</div></div>' +
+      '<div class="metric-card"><div class="metric-icon" style="background:var(--gray-100)"><i class="ti ti-x" style="color:var(--gray-400)"></i></div><div class="metric-val">'+(resueltas.filter(a=>a.estado==='descartada').length)+'</div><div class="metric-lbl">Descartadas</div></div>' +
+    '</div>';
+
+  // Pending table
+  html += '<div class="card" style="margin-bottom:14px">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<div class="card-title" style="margin-bottom:0;color:var(--amber)"><i class="ti ti-clock"></i> Pendientes de revisión</div>' +
+      '<span style="font-size:11px;color:var(--gray-400)">'+pendientes.length+' alertas</span>' +
+    '</div>';
+
+  if (!pendientes.length) {
+    html += '<p style="color:var(--gray-400);text-align:center;padding:20px">Sin alertas pendientes. ✓</p>';
+  } else {
+    html += '<table><thead><tr>' +
+      '<th>Conductor</th><th>Categoría actual</th><th>Categoría sugerida</th>' +
+      '<th>Inspector</th><th>Fecha inspección</th><th>Días pendiente</th><th>Acciones</th>' +
+    '</tr></thead><tbody>';
+    pendientes.forEach(function(a) {
+      var diasPend = Math.round((new Date() - new Date(a.created_at)) / 864e5);
+      var diasCls = diasPend >= 7 ? 'danger' : diasPend >= 3 ? 'warn' : 'info';
+      html += '<tr>' +
+        '<td><div style="font-weight:600">'+(a.conductores?.nombre||'—')+'</div>' +
+          '<div style="font-size:10px;color:var(--gray-400)">'+(a.conductores?.codigo||'')+(a.conductores?.flotas?.nombre?' · '+a.conductores.flotas.nombre:'')+'</div></td>' +
+        '<td>'+badge(a.categoria_actual||'—','gray')+'</td>' +
+        '<td>'+badge(a.categoria_sugerida||'—','warn')+'</td>' +
+        '<td style="font-size:11px">'+(a.inspecciones?.usuarios?.nombre||'—')+'</td>' +
+        '<td style="font-size:11px">'+(a.fecha_inspeccion||'—')+'</td>' +
+        '<td>'+badge(diasPend+'d', diasCls)+'</td>' +
+        '<td>' +
+          '<div style="display:flex;gap:6px">' +
+            '<button class="btn btn-sm btn-primary" onclick="resolverAlerta(\''+a.id+'\',\'confirmada\',\''+a.conductores?.id+'\',\''+a.categoria_sugerida+'\')"><i class="ti ti-check"></i> Confirmar</button>' +
+            '<button class="btn btn-sm" onclick="resolverAlerta(\''+a.id+'\',\'descartada\',null,null)"><i class="ti ti-x"></i> Descartar</button>' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  // Resolved history
+  html += '<div class="card">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<div class="card-title" style="margin-bottom:0">Historial resuelto</div>' +
+      '<span style="font-size:11px;color:var(--gray-400)">'+resueltas.length+' registros — historial permanente</span>' +
+    '</div>';
+
+  if (!resueltas.length) {
+    html += '<p style="color:var(--gray-400);text-align:center;padding:16px">Sin historial aún.</p>';
+  } else {
+    html += '<table><thead><tr>' +
+      '<th>Conductor</th><th>Cat. anterior</th><th>Cat. sugerida</th>' +
+      '<th>Inspector</th><th>Fecha insp.</th><th>Estado</th><th>Resuelto por</th><th>Fecha resolución</th><th>Comentario</th>' +
+    '</tr></thead><tbody>';
+    resueltas.forEach(function(a) {
+      var estCls = a.estado === 'confirmada' ? 'ok' : 'gray';
+      html += '<tr>' +
+        '<td><div style="font-weight:600">'+(a.conductores?.nombre||'—')+'</div>' +
+          '<div style="font-size:10px;color:var(--gray-400)">'+(a.conductores?.codigo||'')+'</div></td>' +
+        '<td>'+badge(a.categoria_actual||'—','gray')+'</td>' +
+        '<td>'+badge(a.categoria_sugerida||'—', a.estado==='confirmada'?'ok':'gray')+'</td>' +
+        '<td style="font-size:11px">'+(a.inspecciones?.usuarios?.nombre||'—')+'</td>' +
+        '<td style="font-size:11px">'+(a.fecha_inspeccion||'—')+'</td>' +
+        '<td>'+badge(a.estado, estCls)+'</td>' +
+        '<td style="font-size:11px">'+(a.resuelto_por_nombre||'—')+'</td>' +
+        '<td style="font-size:11px">'+(a.fecha_resolucion||'—')+'</td>' +
+        '<td style="font-size:11px;color:var(--gray-400);max-width:180px">'+(a.comentario_resolucion||'—')+'</td>' +
+      '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  document.getElementById('main-content').innerHTML = html;
+}
+
+async function resolverAlerta(id, estado, conductorId, categoriaConfirmada) {
+  var comentario = '';
+  if (estado === 'descartada') {
+    comentario = prompt('Motivo del descarte (opcional):') || '';
+  } else {
+    var ok = confirm('¿Confirmar el cambio de categoría a "' + categoriaConfirmada + '" y actualizar al conductor?');
+    if (!ok) return;
+  }
+
+  var updates = {
+    estado: estado,
+    resuelto_por: CU.id,
+    resuelto_por_nombre: CP?.nombre || CU.email,
+    fecha_resolucion: fechaHoy(),
+    comentario_resolucion: comentario,
+  };
+
+  var {error} = await sb.from('alertas_categoria').update(updates).eq('id', id);
+  if (error) { alert('Error: ' + error.message); return; }
+
+  // If confirmed → update conductor category
+  if (estado === 'confirmada' && conductorId && categoriaConfirmada) {
+    var catMap = {'lite':'Lite','comfort':'Comfort','comfort_xl':'Comfort XL','xl':'XL','van':'Van'};
+    var catLabel = catMap[categoriaConfirmada] || categoriaConfirmada;
+    await sb.from('conductores').update({categoria: catLabel}).eq('id', conductorId);
+  }
+
+  renderAlertas();
 }
 
 async function abrirFormActivo() {
