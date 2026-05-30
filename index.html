@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Taxi Directo — Gestión de Flota</title>
+<title>Directo — Web de Inspecciones</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
@@ -106,9 +106,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
 <!-- LOGIN -->
 <div id="login-page">
   <div class="login-card">
-    <div class="login-logo">
-      <div class="logo-mark"><span>TD</span></div>
-      <div><div class="login-title">Taxi Directo</div><div class="login-sub">Sistema de Gestión de Flota</div></div>
+    <div class="login-logo" style="flex-direction:column;align-items:center;gap:8px;margin-bottom:24px">
+      <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 50'%3E%3Crect width='160' height='50' rx='8' fill='%231A56DB'/%3E%3Ctext x='50%25' y='34' text-anchor='middle' font-family='Plus Jakarta Sans,sans-serif' font-size='22' font-weight='700' fill='white'%3EDirecto%3C/text%3E%3C/svg%3E" alt="Directo" style="height:44px">
+      <div class="login-sub">Web de Inspecciones</div>
     </div>
     <div class="form-group">
       <label class="form-label">Correo electrónico</label>
@@ -127,8 +127,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
 <div id="app">
   <div class="header">
     <div class="header-logo">
-      <div class="header-logo-mark"><span>TD</span></div>
-      <div class="header-title">Taxi Directo</div>
+      <div class="header-logo-mark" style="background:#fff;display:flex;align-items:center;justify-content:center;padding:2px 6px;border-radius:6px;width:auto;min-width:28px"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 28'%3E%3Ctext x='50%25' y='21' text-anchor='middle' font-family='Plus Jakarta Sans,sans-serif' font-size='16' font-weight='700' fill='%231240A8'%3EDirecto%3C/text%3E%3C/svg%3E" alt="Directo" style="height:20px"></div>
+      
     </div>
     <div class="header-right">
       <span class="header-user" id="user-name"></span>
@@ -2019,13 +2019,23 @@ async function renderActivos() {
       '<div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-clock"></i></div><div class="metric-val" style="color:var(--amber)">'+pend+'</div><div class="metric-lbl">Pendientes de entrega</div></div>' +
       '<div class="metric-card"><div class="metric-icon ic-red"><i class="ti ti-alert-circle"></i></div><div class="metric-val" style="color:var(--red)">'+fuera+'</div><div class="metric-lbl">Fuera de SLA (&gt;3 días)</div></div>' +
     '</div>' +
-    '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="abrirFormActivo()"><i class="ti ti-plus"></i> Nueva solicitud de activo</button></div>' +
-    '<div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-act" placeholder="Buscar..." oninput="filtrarAct()"><span class="search-count" id="cnt-act">'+(data?.length||0)+' registros</span></div>' +
-    '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div class="card-title" style="margin-bottom:0">Solicitudes — flujo 4 pasos</div>' +
-      '<button class="btn btn-sm btn-primary" onclick="exportarActivos()"><i class="ti ti-download"></i> Exportar Excel</button>' +
-    '</div><div id="act-list"></div></div>';
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-sm" id="tab-solicitudes" onclick="switchActTab('solicitudes')" style="background:var(--blue);color:#fff;border-color:var(--blue)"><i class="ti ti-list"></i> Por solicitud</button>' +
+        '<button class="btn btn-sm" id="tab-bases" onclick="switchActTab('bases')"><i class="ti ti-building-warehouse"></i> Por base</button>' +
+      '</div>' +
+      '<button class="btn btn-primary btn-sm" onclick="abrirFormActivo()"><i class="ti ti-plus"></i> Nueva solicitud de activo</button>' +
+    '</div>' +
+    '<div id="vista-solicitudes">' +
+      '<div class="search-bar"><i class="ti ti-search"></i><input type="text" id="bus-act" placeholder="Buscar..." oninput="filtrarAct()"><span class="search-count" id="cnt-act">'+(data?.length||0)+' registros</span></div>' +
+      '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div class="card-title" style="margin-bottom:0">Solicitudes — flujo 4 pasos</div>' +
+        '<button class="btn btn-sm btn-primary" onclick="exportarActivos()"><i class="ti ti-download"></i> Exportar Excel</button>' +
+      '</div><div id="act-list"></div></div>' +
+    '</div>' +
+    '<div id="vista-bases" style="display:none"></div>';
   document.getElementById('main-content').innerHTML = html;
   window._actData = data||[];
+  window._actTab = 'solicitudes';
   renderActList(data||[]);
 }
 
@@ -2070,6 +2080,91 @@ function renderActList(data) {
         '<div style="display:flex;gap:7px;align-items:center">'+tagHtml+'<button class="btn btn-sm" onclick="actualizarActivo(\''+a.id+'\')"><i class="ti ti-edit"></i> Actualizar</button></div>' +
       '</div>'+stepsHtml+'</div>';
   }).join('');
+}
+
+function switchActTab(tab) {
+  window._actTab = tab;
+  const btnSol = document.getElementById('tab-solicitudes');
+  const btnBase = document.getElementById('tab-bases');
+  if (!btnSol || !btnBase) return;
+  if (tab === 'solicitudes') {
+    btnSol.style.background = 'var(--blue)'; btnSol.style.color = '#fff'; btnSol.style.borderColor = 'var(--blue)';
+    btnBase.style.background = '#fff'; btnBase.style.color = 'var(--gray-800)'; btnBase.style.borderColor = 'var(--gray-200)';
+    document.getElementById('vista-solicitudes').style.display = '';
+    document.getElementById('vista-bases').style.display = 'none';
+  } else {
+    btnBase.style.background = 'var(--blue)'; btnBase.style.color = '#fff'; btnBase.style.borderColor = 'var(--blue)';
+    btnSol.style.background = '#fff'; btnSol.style.color = 'var(--gray-800)'; btnSol.style.borderColor = 'var(--gray-200)';
+    document.getElementById('vista-solicitudes').style.display = 'none';
+    document.getElementById('vista-bases').style.display = '';
+    renderBaseView(window._actData || []);
+  }
+}
+
+function renderBaseView(data) {
+  const BASES = ['Oficina Miraflores','Oficina Aeropuerto','Base Jockey Plaza','Base Bellavista'];
+  const BASE_ICONS = {'Oficina Miraflores':'ti-building','Oficina Aeropuerto':'ti-plane','Base Jockey Plaza':'ti-shopping-cart','Base Bellavista':'ti-anchor'};
+  const el = document.getElementById('vista-bases');
+  if (!el) return;
+  // Group by base — only items that have passed step 3 and not yet delivered (in base), OR have a base assigned
+  const enBase = data.filter(a => a.base_nombre && !a.fecha_paso4);
+  const sinBase = data.filter(a => !a.base_nombre && !a.fecha_paso4);
+  let html = '';
+  BASES.forEach(base => {
+    const items = enBase.filter(a => a.base_nombre === base);
+    html += '<div class="card" style="margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
+        '<div class="metric-icon ic-blue" style="margin-bottom:0;flex-shrink:0"><i class="ti '+BASE_ICONS[base]+'" style="font-size:16px"></i></div>' +
+        '<div style="flex:1"><div style="font-size:14px;font-weight:700">'+base+'</div><div style="font-size:11px;color:var(--gray-400)">'+(items.length?items.length+' activo'+(items.length>1?'s':'')+' en espera':'Sin activos pendientes en esta base')+'</div></div>' +
+        '<span class="badge '+(items.length?'badge-warn':'badge-ok')+'" style="font-size:12px;padding:4px 10px">'+items.length+'</span>' +
+      '</div>';
+    if (items.length) {
+      html += '<table><thead><tr><th>Conductor</th><th>Código</th><th>Flota</th><th>Activo</th><th>Subpartes</th><th>Días</th><th>Acción</th></tr></thead><tbody>';
+      items.forEach(a => {
+        const dias = a.fecha_paso3 ? Math.round((new Date()-new Date(a.fecha_paso3))/864e5) : null;
+        const diasLabel = dias !== null ? dias+'d en base' : 'Sin fecha p3';
+        const fuera = dias !== null && dias>(a.sla_target_dias||3);
+        html += '<tr>' +
+          '<td style="font-weight:600">'+(a.conductores?.nombre||'—')+'</td>' +
+          '<td style="font-family:monospace;font-size:10px">'+(a.conductores?.codigo||'—')+'</td>' +
+          '<td>'+badge(a.conductores?.flotas?.nombre||'—','info')+'</td>' +
+          '<td><strong>'+a.activo+'</strong></td>' +
+          '<td style="font-size:11px;color:var(--gray-400)">'+(Array.isArray(a.subpartes)&&a.subpartes.length?a.subpartes.join(', '):'—')+'</td>' +
+          '<td>'+badge(diasLabel, dias===null?'gray':fuera?'danger':'warn')+'</td>' +
+          '<td><button class="btn btn-sm" onclick="actualizarActivo(''+a.id+'')"><i class="ti ti-edit"></i> Actualizar</button></td>' +
+        '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+  });
+  // Sin base asignada
+  if (sinBase.length) {
+    html += '<div class="card" style="border-color:#FCA5A5;margin-bottom:12px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
+        '<div class="metric-icon ic-red" style="margin-bottom:0;flex-shrink:0"><i class="ti ti-map-pin-off" style="font-size:16px"></i></div>' +
+        '<div style="flex:1"><div style="font-size:14px;font-weight:700">Sin base asignada</div><div style="font-size:11px;color:var(--gray-400)">'+sinBase.length+' solicitud'+(sinBase.length>1?'es':'')+' sin base en paso 3</div></div>' +
+        '<span class="badge badge-danger" style="font-size:12px;padding:4px 10px">'+sinBase.length+'</span>' +
+      '</div>' +
+      '<table><thead><tr><th>Conductor</th><th>Código</th><th>Flota</th><th>Activo</th><th>Paso actual</th><th>Días</th><th>Acción</th></tr></thead><tbody>' +
+      sinBase.map(a => {
+        const dias = Math.round((new Date()-new Date(a.created_at))/864e5);
+        const done = [a.fecha_paso1,a.fecha_paso2,a.fecha_paso3,a.fecha_paso4].filter(Boolean).length;
+        const fuera = dias>(a.sla_target_dias||3);
+        const fuera = dias>(a.sla_target_dias||3);
+        return '<tr>' +
+          '<td style="font-weight:600">'+(a.conductores?.nombre||'—')+'</td>' +
+          '<td style="font-family:monospace;font-size:10px">'+(a.conductores?.codigo||'—')+'</td>' +
+          '<td>'+badge(a.conductores?.flotas?.nombre||'—','info')+'</td>' +
+          '<td><strong>'+a.activo+'</strong></td>' +
+          '<td><span style="font-size:11px">Paso '+done+' / 4</span></td>' +
+          '<td>'+badge(diasLabel, dias===null?'gray':fuera?'danger':'warn')+'</td>' +
+          '<td><button class="btn btn-sm" onclick="actualizarActivo(''+a.id+'')"><i class="ti ti-edit"></i> Actualizar</button></td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+  el.innerHTML = html || '<p style="color:var(--gray-400);text-align:center;padding:30px">No hay activos pendientes en ninguna base.</p>';
 }
 
 async function abrirFormActivo() {
@@ -2174,8 +2269,8 @@ async function actualizarActivo(id) {
           '<div style="font-size:11px;font-weight:700">'+lbls[n]+'</div>' +
           (sol[key]?'<span style="font-size:10px;color:var(--green);font-weight:600">✓ '+sol[key]+'</span>':'') +
         '</div>' +
-        '<input type="date" id="upd-p'+n+'" value="'+(sol[key]||'')+'" style="margin-bottom:'+(n===3?'8':'0')+'px">' +
-        (n===3?'<select id="upd-base" style="margin-top:6px"><option value="">Seleccionar base...</option><option value="Oficina Miraflores"'+(sol.base_nombre==='Oficina Miraflores'?' selected':'')+'>Oficina Miraflores</option><option value="Aeropuerto"'+(sol.base_nombre==='Aeropuerto'?' selected':'')+'>Aeropuerto</option></select>':'') +
+        '<input type="date" id="upd-p'+n+'" value="'+(sol[key]||fechaHoy())+'" style="margin-bottom:'+(n===3?'8':'0')+'px">'+(sol[key]?'':'<span style="font-size:9px;color:var(--gray-400);margin-left:4px">Pre-llenado con hoy — editable</span>') +
+        (n===3?'<select id="upd-base" style="margin-top:6px"><option value="">Seleccionar base...</option><option value="Oficina Miraflores"'+(sol.base_nombre==='Oficina Miraflores'?' selected':'')+'>Oficina Miraflores</option><option value="Oficina Aeropuerto"'+(sol.base_nombre==='Oficina Aeropuerto'?' selected':'')+'>Oficina Aeropuerto</option><option value="Base Jockey Plaza"'+(sol.base_nombre==='Base Jockey Plaza'?' selected':'')+'>Base Jockey Plaza</option><option value="Base Bellavista"'+(sol.base_nombre==='Base Bellavista'?' selected':'')+'>Base Bellavista</option></select>':'') +
       '</div>';
     }).join('') +
     '<button class="btn btn-primary" onclick="guardarPasos(\''+id+'\')"><i class="ti ti-check"></i> Guardar cambios</button>'
