@@ -2106,63 +2106,63 @@ function renderBaseView(data) {
   const BASE_ICONS = {'Oficina Miraflores':'ti-building','Oficina Aeropuerto':'ti-plane','Base Jockey Plaza':'ti-shopping-cart','Base Bellavista':'ti-anchor'};
   const el = document.getElementById('vista-bases');
   if (!el) return;
-  // Group by base — only items that have passed step 3 and not yet delivered (in base), OR have a base assigned
-  const enBase = data.filter(a => a.base_nombre && !a.fecha_paso4);
-  const sinBase = data.filter(a => !a.base_nombre && !a.fecha_paso4);
-  let html = '';
-  BASES.forEach(base => {
-    const items = enBase.filter(a => a.base_nombre === base);
-    html += '<div class="card" style="margin-bottom:12px">' +
-      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
-        '<div class="metric-icon ic-blue" style="margin-bottom:0;flex-shrink:0"><i class="ti '+BASE_ICONS[base]+'" style="font-size:16px"></i></div>' +
-        '<div style="flex:1"><div style="font-size:14px;font-weight:700">'+base+'</div><div style="font-size:11px;color:var(--gray-400)">'+(items.length?items.length+' activo'+(items.length>1?'s':'')+' en espera':'Sin activos pendientes en esta base')+'</div></div>' +
-        '<span class="badge '+(items.length?'badge-warn':'badge-ok')+'" style="font-size:12px;padding:4px 10px">'+items.length+'</span>' +
-      '</div>';
+  const enBase = data.filter(function(a){ return a.base_nombre && !a.fecha_paso4; });
+  const sinBase = data.filter(function(a){ return !a.base_nombre && !a.fecha_paso4; });
+  var html = '';
+  BASES.forEach(function(base) {
+    var icon = BASE_ICONS[base];
+    var items = enBase.filter(function(a){ return a.base_nombre === base; });
+    html += '<div class="card" style="margin-bottom:12px">';
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">';
+    html += '<div class="metric-icon ic-blue" style="margin-bottom:0;flex-shrink:0"><i class="ti ' + icon + '" style="font-size:16px"></i></div>';
+    html += '<div style="flex:1"><div style="font-size:14px;font-weight:700">' + base + '</div>';
+    html += '<div style="font-size:11px;color:var(--gray-400)">' + (items.length ? items.length + ' activo' + (items.length > 1 ? 's' : '') + ' en espera' : 'Sin activos pendientes en esta base') + '</div></div>';
+    html += '<span class="badge ' + (items.length ? 'badge-warn' : 'badge-ok') + '" style="font-size:12px;padding:4px 10px">' + items.length + '</span>';
+    html += '</div>';
     if (items.length) {
-      html += '<table><thead><tr><th>Conductor</th><th>Código</th><th>Flota</th><th>Activo</th><th>Subpartes</th><th>Días</th><th>Acción</th></tr></thead><tbody>';
-      items.forEach(a => {
-        const dias = a.fecha_paso3 ? Math.round((new Date()-new Date(a.fecha_paso3))/864e5) : null;
-        const diasLabel = dias !== null ? dias+'d en base' : 'Sin fecha p3';
-        const fuera = dias !== null && dias>(a.sla_target_dias||3);
-        html += '<tr>' +
-          '<td style="font-weight:600">'+(a.conductores?.nombre||'—')+'</td>' +
-          '<td style="font-family:monospace;font-size:10px">'+(a.conductores?.codigo||'—')+'</td>' +
-          '<td>'+badge(a.conductores?.flotas?.nombre||'—','info')+'</td>' +
-          '<td><strong>'+a.activo+'</strong></td>' +
-          '<td style="font-size:11px;color:var(--gray-400)">'+(Array.isArray(a.subpartes)&&a.subpartes.length?a.subpartes.join(', '):'—')+'</td>' +
-          '<td>'+badge(diasLabel, dias===null?'gray':fuera?'danger':'warn')+'</td>' +
-          '<td><button class="btn btn-sm" onclick="actualizarActivo(''+a.id+'')"><i class="ti ti-edit"></i> Actualizar</button></td>' +
-        '</tr>';
+      html += '<table><thead><tr><th>Conductor</th><th>Código</th><th>Flota</th><th>Activo</th><th>Subpartes</th><th>Días en base</th><th>Acción</th></tr></thead><tbody>';
+      items.forEach(function(a) {
+        var dias = a.fecha_paso3 ? Math.round((new Date() - new Date(a.fecha_paso3)) / 864e5) : null;
+        var diasLabel = dias !== null ? dias + 'd en base' : 'Sin fecha p3';
+        var cls = dias === null ? 'gray' : (dias > (a.sla_target_dias || 3) ? 'danger' : 'warn');
+        html += '<tr>';
+        html += '<td style="font-weight:600">' + (a.conductores && a.conductores.nombre ? a.conductores.nombre : '—') + '</td>';
+        html += '<td style="font-family:monospace;font-size:10px">' + (a.conductores && a.conductores.codigo ? a.conductores.codigo : '—') + '</td>';
+        html += '<td>' + badge((a.conductores && a.conductores.flotas && a.conductores.flotas.nombre ? a.conductores.flotas.nombre : '—'), 'info') + '</td>';
+        html += '<td><strong>' + a.activo + '</strong></td>';
+        html += '<td style="font-size:11px;color:var(--gray-400)">' + (Array.isArray(a.subpartes) && a.subpartes.length ? a.subpartes.join(', ') : '—') + '</td>';
+        html += '<td>' + badge(diasLabel, cls) + '</td>';
+        html += '<td><button class="btn btn-sm" onclick="actualizarActivo(\'' + a.id + '\')" ><i class="ti ti-edit"></i> Actualizar</button></td>';
+        html += '</tr>';
       });
       html += '</tbody></table>';
     }
     html += '</div>';
   });
-  // Sin base asignada
   if (sinBase.length) {
-    html += '<div class="card" style="border-color:#FCA5A5;margin-bottom:12px">' +
-      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
-        '<div class="metric-icon ic-red" style="margin-bottom:0;flex-shrink:0"><i class="ti ti-map-pin-off" style="font-size:16px"></i></div>' +
-        '<div style="flex:1"><div style="font-size:14px;font-weight:700">Sin base asignada</div><div style="font-size:11px;color:var(--gray-400)">'+sinBase.length+' solicitud'+(sinBase.length>1?'es':'')+' sin base en paso 3</div></div>' +
-        '<span class="badge badge-danger" style="font-size:12px;padding:4px 10px">'+sinBase.length+'</span>' +
-      '</div>' +
-      '<table><thead><tr><th>Conductor</th><th>Código</th><th>Flota</th><th>Activo</th><th>Paso actual</th><th>Días</th><th>Acción</th></tr></thead><tbody>' +
-      sinBase.map(a => {
-        const dias = Math.round((new Date()-new Date(a.created_at))/864e5);
-        const done = [a.fecha_paso1,a.fecha_paso2,a.fecha_paso3,a.fecha_paso4].filter(Boolean).length;
-        const fuera = dias>(a.sla_target_dias||3);
-        const fuera = dias>(a.sla_target_dias||3);
-        return '<tr>' +
-          '<td style="font-weight:600">'+(a.conductores?.nombre||'—')+'</td>' +
-          '<td style="font-family:monospace;font-size:10px">'+(a.conductores?.codigo||'—')+'</td>' +
-          '<td>'+badge(a.conductores?.flotas?.nombre||'—','info')+'</td>' +
-          '<td><strong>'+a.activo+'</strong></td>' +
-          '<td><span style="font-size:11px">Paso '+done+' / 4</span></td>' +
-          '<td>'+badge(diasLabel, dias===null?'gray':fuera?'danger':'warn')+'</td>' +
-          '<td><button class="btn btn-sm" onclick="actualizarActivo(''+a.id+'')"><i class="ti ti-edit"></i> Actualizar</button></td>' +
-        '</tr>';
-      }).join('') +
-      '</tbody></table></div>';
+    html += '<div class="card" style="border-color:#FCA5A5;margin-bottom:12px">';
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">';
+    html += '<div class="metric-icon ic-red" style="margin-bottom:0;flex-shrink:0"><i class="ti ti-map-pin-off" style="font-size:16px"></i></div>';
+    html += '<div style="flex:1"><div style="font-size:14px;font-weight:700">Sin base asignada</div>';
+    html += '<div style="font-size:11px;color:var(--gray-400)">' + sinBase.length + ' solicitud' + (sinBase.length > 1 ? 'es' : '') + ' sin base en paso 3</div></div>';
+    html += '<span class="badge badge-danger" style="font-size:12px;padding:4px 10px">' + sinBase.length + '</span>';
+    html += '</div>';
+    html += '<table><thead><tr><th>Conductor</th><th>Código</th><th>Flota</th><th>Activo</th><th>Paso actual</th><th>Días</th><th>Acción</th></tr></thead><tbody>';
+    sinBase.forEach(function(a) {
+      var dias = Math.round((new Date() - new Date(a.created_at)) / 864e5);
+      var done = [a.fecha_paso1, a.fecha_paso2, a.fecha_paso3, a.fecha_paso4].filter(Boolean).length;
+      var fuera = dias > (a.sla_target_dias || 3);
+      html += '<tr>';
+      html += '<td style="font-weight:600">' + (a.conductores && a.conductores.nombre ? a.conductores.nombre : '—') + '</td>';
+      html += '<td style="font-family:monospace;font-size:10px">' + (a.conductores && a.conductores.codigo ? a.conductores.codigo : '—') + '</td>';
+      html += '<td>' + badge((a.conductores && a.conductores.flotas && a.conductores.flotas.nombre ? a.conductores.flotas.nombre : '—'), 'info') + '</td>';
+      html += '<td><strong>' + a.activo + '</strong></td>';
+      html += '<td><span style="font-size:11px">Paso ' + done + ' / 4</span></td>';
+      html += '<td>' + badge(dias + 'd', fuera ? 'danger' : 'warn') + '</td>';
+      html += '<td><button class="btn btn-sm" onclick="actualizarActivo(\'' + a.id + '\')" ><i class="ti ti-edit"></i> Actualizar</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
   }
   el.innerHTML = html || '<p style="color:var(--gray-400);text-align:center;padding:30px">No hay activos pendientes en ninguna base.</p>';
 }
