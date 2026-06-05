@@ -2618,34 +2618,76 @@ async function renderPadron() {
 async function procesarPadron() {
   const file = document.getElementById('padron-file').files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    const text = e.target.result;
-    const lines = text.split('\n').filter(l=>l.trim());
-    if (!lines.length) return;
-    const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
-    const rows = lines.slice(1).map(l => {
-      const cols = l.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
-      const obj = {};
-      headers.forEach((h,i)=>obj[h]=cols[i]||'');
-      return {
-        codigo: obj.codigo||obj['código']||obj.cod||'',
-        nombre: obj.nombre||obj.conductor||'',
-        placa: obj.placa||'',
-        vehiculo: obj.vehiculo||obj.auto||obj.carro||'',
-        flota: obj.flota||'',
-        estado: obj.estado||'activo',
-        categoria: obj.categoria||obj['categoría']||''
-      };
-    }).filter(r=>r.codigo&&r.nombre);
-    // Store rows in window variable to avoid inline JSON issues
+  const el = document.getElementById('padron-preview');
+  el.innerHTML = '<div class="loader">Procesando archivo...</div>';
+  try {
+    const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+    let rows = [];
+    if (isXlsx) {
+      // Read Excel with SheetJS
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), {type:'array', raw:true, cellFormula:false});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, {defval:'', raw:true});
+      console.log('Excel rows:', raw.length, 'Sample:', JSON.stringify(raw[0]));
+      rows = raw.map(r => {
+        // Normalize key: lowercase, no accents
+        const get = (k) => {
+          const keys = Object.keys(r);
+          const match = keys.find(key => key.trim().toLowerCase()
+            .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+            .replace(/[^a-z0-9]/g,'') === k.replace(/[^a-z0-9]/g,''));
+          const val = match !== undefined ? r[match] : '';
+          if (typeof val === 'string' && val.startsWith('=')) return '';
+          return String(val === null || val === undefined ? '' : val).trim();
+        };
+        return {
+          codigo: get('codigo'),
+          nombre: get('nombre'),
+          vehiculo: get('vehiculo'),
+          placa: get('placa'),
+          flota: get('flota'),
+          estado: get('estado') || 'activo',
+          categoria: get('categoria')
+        };
+      }).filter(r => r.codigo && r.nombre);
+    } else {
+      // Read CSV
+      const text = await file.text();
+      const clean = text.replace(/^\uFEFF/, '');
+      const lines = clean.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) { el.innerHTML = '<div class="alert alert-danger"><div class="at">Archivo vacío</div></div>'; return; }
+      const sep = lines[0].includes(';') ? ';' : '\t';
+      const headers = lines[0].split(sep).map(h => h.trim().toLowerCase()
+        .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+        .replace(/[^a-z0-9]/g,''));
+      console.log('CSV headers:', headers);
+      rows = lines.slice(1).map(l => {
+        const cols = l.split(sep).map(c => c.trim().replace(/^"|"$/g,''));
+        const obj = {};
+        headers.forEach((h,i) => obj[h] = cols[i] || '');
+        return {
+          codigo: obj.codigo || obj.cod || '',
+          nombre: obj.nombre || obj.conductor || '',
+          placa: obj.placa || '',
+          vehiculo: obj.vehiculo || '',
+          flota: obj.flota || '',
+          estado: obj.estado || 'activo',
+          categoria: obj.categoria || ''
+        };
+      }).filter(r => r.codigo && r.nombre);
+    }
+    console.log('Rows after filter:', rows.length, rows[0]);
     window._padronRows = rows;
-    document.getElementById('padron-preview').innerHTML =
-      '<div class="alert alert-info"><div class="at"><i class="ti ti-file-check"></i> '+rows.length+' conductores detectados</div></div>' +
-      '<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows)"><i class="ti ti-upload"></i> Confirmar carga ('+rows.length+')</button>' +
-      '<button class="btn" onclick="renderPadron()">Cancelar</button></div>';
-  };
-  reader.readAsText(file,'UTF-8');
+    el.innerHTML = rows.length === 0
+      ? '<div class="alert alert-danger"><div class="at">⚠ No se detectaron conductores. Verifica que el archivo tenga columnas: codigo, nombre, vehiculo, placa, flota, estado, categoria</div></div>'
+      : '<div class="alert alert-info"><div class="at"><i class="ti ti-file-check"></i> ' + rows.length + ' conductores detectados — Vista previa: ' + rows.slice(0,3).map(r=>r.nombre+'('+r.codigo+')').join(', ') + '</div></div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows)"><i class="ti ti-upload"></i> Confirmar carga (' + rows.length + ')</button>' +
+        '<button class="btn" onclick="renderPadron()">Cancelar</button></div>';
+  } catch(e) {
+    console.error('parsePadron error:', e);
+    document.getElementById('padron-preview').innerHTML = '<div class="alert alert-danger"><div class="at">Error: ' + e.message + '</div></div>';
+  }
 }
 
 async function subirPadron(rows) {
