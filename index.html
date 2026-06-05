@@ -600,10 +600,24 @@ async function buscarCondInsp() {
 }
 
 function checkLavado(val) { _pendingLavado = val.includes('meses')||val.includes('mes') ? val : null; }
+function normalizarCategoria(val) {
+  // Normalize to lowercase slug, handle spaces/underscores/accents/caps
+  if (!val) return '';
+  const v = String(val).toLowerCase().trim()
+    .replace(/[_\-]/g,' ')
+    .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u');
+  if (v === 'comfort xl' || v === 'comfort_xl') return 'comfort_xl';
+  if (v === 'comfort') return 'comfort';
+  if (v === 'lite') return 'lite';
+  if (v === 'xl') return 'xl';
+  if (v === 'van') return 'van';
+  return v.replace(/\s+/g,'_');
+}
+
 function checkCategoria(val) {
-  const map = {'Lite':'lite','Comfort':'comfort','Comfort XL':'comfort_xl','XL':'xl','Van':'van'};
-  const sugerida = map[val];
-  _catAlerta = (sugerida && _inspCondCat && sugerida !== _inspCondCat) ? {sugerida, observada:val} : null;
+  const sugerida = normalizarCategoria(val);
+  const actual = normalizarCategoria(_inspCondCat);
+  _catAlerta = (sugerida && actual && sugerida !== actual) ? {sugerida, observada:val} : null;
 }
 
 async function guardarInsp() {
@@ -653,7 +667,7 @@ async function guardarInsp() {
     await sb.from('alertas_categoria').insert({
       conductor_id: _inspCondId,
       inspeccion_id: inspData?.id || null,
-      categoria_actual: _inspCondCat,
+      categoria_actual: normalizarCategoria(_inspCondCat),
       categoria_sugerida: _catAlerta.sugerida,
       categoria_observada_texto: _catAlerta.observada,
       fecha_inspeccion: fecha,
@@ -1823,10 +1837,29 @@ async function parsearPadron(){
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json(ws, {defval:'', raw:false});
+      // raw:true preserves cached formula values (VLOOKUP etc); cellFormula:false skips formula strings
+      const raw = XLSX.utils.sheet_to_json(ws, {defval:'', raw:true});
       data = raw.map(r=>{
-        const n = (k) => String(r[k]||r[k.charAt(0).toUpperCase()+k.slice(1)]||'').trim();
-        return {codigo:n('codigo'), nombre:n('nombre'), vehiculo:n('vehiculo'), placa:n('placa'), flota:n('flota'), estado:n('estado')||'activo', categoria:n('categoria')};
+        // Normalize key lookup: try lowercase, title case, and trim
+        const n = (k) => {
+          const keys = Object.keys(r);
+          const match = keys.find(key => key.trim().toLowerCase()
+            .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+            === k.toLowerCase());
+          const val = match ? r[match] : '';
+          // If value is a formula string, return empty
+          if (typeof val === 'string' && val.startsWith('=')) return '';
+          return String(val||'').trim();
+        };
+        return {
+          codigo: n('codigo'),
+          nombre: n('nombre'),
+          vehiculo: n('vehiculo'),
+          placa: n('placa'),
+          flota: n('flota'),
+          estado: n('estado')||'activo',
+          categoria: n('categoria')
+        };
       }).filter(r=>r.codigo && r.nombre);
     } else {
       const text = await file.text();
