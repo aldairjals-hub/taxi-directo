@@ -1830,6 +1830,7 @@ async function parsearPadron(){
   if(!file) return;
   const el = document.getElementById('padron-preview');
   el.innerHTML = '<div class="loader">Procesando archivo...</div>';
+  console.log('Archivo:', file.name, 'Tipo:', file.type, 'Tamaño:', file.size);
   try {
     const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     let data = [];
@@ -1839,6 +1840,7 @@ async function parsearPadron(){
       const ws = wb.Sheets[wb.SheetNames[0]];
       // raw:true preserves cached formula values (VLOOKUP etc); cellFormula:false skips formula strings
       const raw = XLSX.utils.sheet_to_json(ws, {defval:'', raw:true});
+      console.log('Filas raw:', raw.length, 'Primera:', JSON.stringify(raw[0]));
       data = raw.map(r=>{
         // Normalize key lookup: try lowercase, title case, and trim
         const n = (k) => {
@@ -1861,6 +1863,7 @@ async function parsearPadron(){
           categoria: n('categoria')
         };
       }).filter(r=>r.codigo && r.nombre);
+      console.log('Después de filter:', data.length, data[0]);
     } else {
       const text = await file.text();
       // Eliminar BOM si existe
