@@ -1838,7 +1838,11 @@ async function subirPadron(rows){
   let ok=0,err=0;
   for(const r of rows){
     if(!r.codigo)continue;
-    const fl=flotas?.find(f=>f.nombre.toLowerCase()===( r.flota||'').toLowerCase());
+    const normFl = (s) => String(s||'').toLowerCase().trim()
+      .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+      .replace(/[^a-z0-9]/g,'');
+    const fl = flotas?.find(f => normFl(f.nombre) === normFl(r.flota)) ||
+               flotas?.find(f => normFl(f.nombre).includes(normFl(r.flota)) || normFl(r.flota).includes(normFl(f.nombre)));
     const{error}=await sb.from('conductores').upsert({codigo:r.codigo.toUpperCase(),nombre:r.nombre||'',vehiculo:r.vehiculo||null,placa:r.placa||null,flota_id:fl?.id||null,estado:r.estado||'activo',categoria:r.categoria||null},{onConflict:'codigo'});
     error?err++:ok++;
   }
@@ -2385,10 +2389,21 @@ async function subirPadron(rows) {
   }
   let ok=0,err=0;
   for (const r of rows) {
-    const flota = flotas?.find(f=>f.nombre.toLowerCase().includes((r.flota||'').toLowerCase()));
+    const normFlota = (s) => String(s||'').toLowerCase().trim()
+      .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
+      .replace(/[^a-z0-9]/g,'');
+    const flota = flotas?.find(f => normFlota(f.nombre) === normFlota(r.flota)) ||
+                  flotas?.find(f => normFlota(f.nombre).includes(normFlota(r.flota)) || normFlota(r.flota).includes(normFlota(f.nombre)));
+    const normEstado = (s) => {
+      const v = String(s||'').toLowerCase().trim()
+        .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u');
+      if (v.includes('congel')) return 'congelado';
+      if (v.includes('desact') || v.includes('inact') || v.includes('baja')) return 'desactivado';
+      return 'activo';
+    };
     const {error} = await sb.from('conductores').upsert({
       codigo:r.codigo.toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,
-      placa:r.placa||null,flota_id:flota?.id||null,estado:r.estado||'activo',
+      placa:r.placa||null,flota_id:flota?.id||null,estado:normEstado(r.estado),
       categoria:r.categoria||null
     },{onConflict:'codigo'});
     error?err++:ok++;
