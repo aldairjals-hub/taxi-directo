@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Directo — Web de Inspecciones</title>
+<title>Taxi Directo — Gestión de Flota</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
@@ -107,8 +107,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
 <div id="login-page">
   <div class="login-card">
     <div class="login-logo">
-      <div class="logo-mark"><span>D</span></div>
-      <div><div class="login-title">Taxi Directo</div><div class="login-sub">Web de Inspecciones</div></div>
+      <div class="logo-mark"><span>TD</span></div>
+      <div><div class="login-title">Taxi Directo</div><div class="login-sub">Sistema de Gestión de Flota</div></div>
     </div>
     <div class="form-group">
       <label class="form-label">Correo electrónico</label>
@@ -127,8 +127,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
 <div id="app">
   <div class="header">
     <div class="header-logo">
-      <div class="header-logo-mark"><span>D</span></div>
-      <div class="header-title">Taxi Directo</div>
+      <div class="header-logo-mark"><span>TD</span></div>
+      
     </div>
     <div class="header-right">
       <span class="header-user" id="user-name"></span>
@@ -206,6 +206,7 @@ const NAV_ADMIN = [
   {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle',badge:true},
   {id:'incidencias',label:'Incidencias',icon:'ti-exclamation-circle'},
   {id:'activos',label:'Activos + SLA',icon:'ti-package'},
+  {id:'alertas',label:'Alertas categoría',icon:'ti-tag',badge:true},
   {id:'constructor',label:'Constructor form.',icon:'ti-forms'},
   {id:'reportes',label:'Reportes',icon:'ti-chart-bar'},
   {id:'padron',label:'Gestión padrón',icon:'ti-upload'},
@@ -229,6 +230,7 @@ const NAV_EJECUTIVO = [
   {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle',badge:true},
   {id:'incidencias',label:'Incidencias',icon:'ti-exclamation-circle'},
   {id:'activos',label:'Activos + SLA',icon:'ti-package'},
+  {id:'alertas',label:'Alertas categoría',icon:'ti-tag',badge:true},
   {id:'reportes',label:'Reportes',icon:'ti-chart-bar'},
   {id:'padron',label:'Gestión padrón',icon:'ti-upload'},
 ];
@@ -257,6 +259,7 @@ async function loadTab(tab) {
     compromisos: renderCompromisos,
     incidencias: renderIncidencias,
     activos: renderActivos,
+    alertas: renderAlertas,
     constructor: renderConstructor,
     reportes: renderReportes,
     padron: renderPadron,
@@ -300,7 +303,7 @@ async function renderDashboard() {
   const hoy = new Date().toISOString().slice(0,10);
   const ayer = new Date(Date.now()-864e5).toISOString().slice(0,10);
   const [r1,r2,r3,r4,r5,r6,r7] = await Promise.all([
-    sb.from('conductores').select('*,flotas!inner(nombre)',{count:'exact',head:true}).neq('estado','desactivado').neq('flotas.nombre','Flota Propia'),
+    sb.from('conductores').select('*',{count:'exact',head:true}).neq('estado','desactivado'),
     sb.from('inspecciones').select('*',{count:'exact',head:true}).eq('mes_referencia',mes),
     sb.from('bloqueos').select('*',{count:'exact',head:true}).eq('confirmado',true).eq('subsanado',false),
     sb.from('incidencias').select('*',{count:'exact',head:true}).eq('estado','abierta'),
@@ -399,7 +402,7 @@ async function loadDashTimeline() {
 
 async function loadDashBreakdown(mes, totalConds) {
   const {data:insp} = await sb.from('inspecciones').select('conductor_id,usuario_id,usuarios(nombre,flotas_asignadas)').eq('mes_referencia',mes);
-  const {data:conds} = await sb.from('conductores').select('id,flotas(nombre)').neq('estado','desactivado').neq('flotas.nombre','Flota Propia');
+  const {data:conds} = await sb.from('conductores').select('id,flotas(nombre)').neq('estado','desactivado');
 
   // By inspector con desglose por flota individual
   const byInsp = {};
@@ -594,10 +597,21 @@ async function buscarCondInsp() {
 }
 
 function checkLavado(val) { _pendingLavado = val.includes('meses')||val.includes('mes') ? val : null; }
+function normalizarCategoria(val) {
+  if (!val) return '';
+  const v = String(val).toLowerCase().trim().replace(/[_\-]/g,' ')
+    .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u');
+  if (v === 'comfort xl') return 'comfort_xl';
+  if (v.includes('comfort')) return 'comfort';
+  if (v === 'lite') return 'lite';
+  if (v === 'xl') return 'xl';
+  if (v === 'van') return 'van';
+  return v.replace(/\s+/g,'_');
+}
 function checkCategoria(val) {
-  const map = {'Lite':'lite','Comfort':'comfort','Comfort XL':'comfort_xl','XL':'xl','Van':'van'};
-  const sugerida = map[val];
-  _catAlerta = (sugerida && _inspCondCat && sugerida !== _inspCondCat) ? {sugerida, observada:val} : null;
+  const sugerida = normalizarCategoria(val);
+  const actual = normalizarCategoria(_inspCondCat);
+  _catAlerta = (sugerida && actual && sugerida !== actual) ? {sugerida, observada:val} : null;
 }
 
 async function guardarInsp() {
@@ -864,7 +878,7 @@ async function generarPDF(inspId) {
     '<table><thead><tr><th>Campo evaluado</th><th>Resultado</th></tr></thead><tbody>'+camposRows+'</tbody></table>' +
     (activos.length?'<div style="margin-top:12px;font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;margin-bottom:6px">Activos solicitados</div>'+activos.map(a=>'<div style="color:#B91C1C;font-size:11px;padding:2px 0">• '+(a.activo||a)+(Array.isArray(a.subpartes)&&a.subpartes.length?' ('+a.subpartes.join(', ')+')':'')+'</div>').join(''):'') +
     (i.observacion_general?'<div style="background:#F8FAFC;padding:9px;border-radius:6px;margin-top:10px;font-size:11px"><strong>Observación:</strong> '+i.observacion_general+'</div>':'') +
-    '<div class="footer"><span>Taxi Directo · Web de Inspecciones</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>' +
+    '<div class="footer"><span>Taxi Directo · Sistema de Gestión de Flota</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>' +
     '<br class="no-print"><button onclick="window.print()" class="no-print" style="padding:8px 16px;background:#1A56DB;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Guardar PDF</button>' +
     '</body></html>');
   w.document.close();
@@ -890,7 +904,7 @@ async function renderBloqueos() {
 
   const [{data:bloqueos,error},{data:conductores},{data:inspMes},{data:bloqueadosPorInsp}] = await Promise.all([
     sb.from('bloqueos').select('*,conductores(codigo,nombre,placa,vehiculo,flotas(nombre))').eq('subsanado',false).order('created_at',{ascending:false}),
-    sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,flotas(nombre)').neq('estado','desactivado').neq('flotas.nombre','Flota Propia'),
+    sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,flotas(nombre)').neq('estado','desactivado'),
     sb.from('inspecciones').select('conductor_id').eq('mes_referencia',mes),
     sb.from('bloqueos').select('conductor_id').eq('tipo','inspeccion').eq('confirmado',true).eq('subsanado',false),
   ]);
@@ -1476,7 +1490,7 @@ async function renderReportes(){
 
   const [{data:mesesData},{data:conds},{data:inspMes},{data:camposDB},{data:bloqueados}] = await Promise.all([
     sb.from('inspecciones').select('mes_referencia').order('mes_referencia',{ascending:false}),
-    sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,categoria,estado,flotas(nombre)').neq('estado','desactivado').neq('flotas.nombre','Flota Propia'),
+    sb.from('conductores').select('id,codigo,nombre,placa,vehiculo,categoria,estado,flotas(nombre)').neq('estado','desactivado'),
     sb.from('inspecciones').select('conductor_id,campos_evaluados,score_experiencia,fecha').eq('mes_referencia',mesSeleccionado).order('fecha',{ascending:false}),
     sb.from('formulario_campos').select('id,nombre').eq('formulario','inspeccion'),
     sb.from('bloqueos').select('conductor_id').eq('confirmado',true).eq('subsanado',false),
@@ -1770,7 +1784,7 @@ async function exportarReporteXlsx(){
 
 // --- PADRÓN -------------------------------
 async function renderPadron(){
-  const{data:conds,count}=await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,categoria,flotas(nombre)',{count:'exact'}).neq('estado','desactivado').neq('flotas.nombre','Flota Propia').order('nombre').limit(15);
+  const{data:conds,count}=await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,categoria,flotas(nombre)',{count:'exact'}).neq('estado','desactivado').order('nombre').limit(15);
   document.getElementById('main-content').innerHTML=
     '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Gestión de padrón</h2>'+
     '<div class="card" style="max-width:600px">'+
@@ -1838,11 +1852,7 @@ async function subirPadron(rows){
   let ok=0,err=0;
   for(const r of rows){
     if(!r.codigo)continue;
-    const normFl = (s) => String(s||'').toLowerCase().trim()
-      .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-      .replace(/[^a-z0-9]/g,'');
-    const fl = flotas?.find(f => normFl(f.nombre) === normFl(r.flota)) ||
-               flotas?.find(f => normFl(f.nombre).includes(normFl(r.flota)) || normFl(r.flota).includes(normFl(f.nombre)));
+    const fl=flotas?.find(f=>f.nombre.toLowerCase()===( r.flota||'').toLowerCase());
     const{error}=await sb.from('conductores').upsert({codigo:r.codigo.toUpperCase(),nombre:r.nombre||'',vehiculo:r.vehiculo||null,placa:r.placa||null,flota_id:fl?.id||null,estado:r.estado||'activo',categoria:r.categoria||null},{onConflict:'codigo'});
     error?err++:ok++;
   }
@@ -2179,7 +2189,7 @@ async function actualizarActivo(id) {
           (sol[key]?'<span style="font-size:10px;color:var(--green);font-weight:600">✓ '+sol[key]+'</span>':'') +
         '</div>' +
         '<input type="date" id="upd-p'+n+'" value="'+(sol[key]||'')+'" style="margin-bottom:'+(n===3?'8':'0')+'px">' +
-        (n===3?'<select id="upd-base" style="margin-top:6px"><option value="">Seleccionar base...</option><option value="Oficina Miraflores"'+(sol.base_nombre==='Oficina Miraflores'?' selected':'')+'>Oficina Miraflores</option><option value="Aeropuerto"'+(sol.base_nombre==='Aeropuerto'?' selected':'')+'>Aeropuerto</option></select>':'') +
+        (n===3?'<select id="upd-base" style="margin-top:6px"><option value="">Seleccionar base...</option><option value="Oficina Miraflores"'+(sol.base_nombre==='Oficina Miraflores'?' selected':'')+'>Oficina Miraflores</option><option value="Oficina Aeropuerto"'+(sol.base_nombre==='Oficina Aeropuerto'?' selected':'')+'>Oficina Aeropuerto</option><option value="Base Jockey Plaza"'+(sol.base_nombre==='Base Jockey Plaza'?' selected':'')+'>Base Jockey Plaza</option><option value="Base Bellavista"'+(sol.base_nombre==='Base Bellavista'?' selected':'')+'>Base Bellavista</option></select>':'') +
       '</div>';
     }).join('') +
     '<button class="btn btn-primary" onclick="guardarPasos(\''+id+'\')"><i class="ti ti-check"></i> Guardar cambios</button>'
@@ -2232,6 +2242,79 @@ async function exportarActivos() {
 </script>
 
 <script>
+
+// --- ALERTAS CATEGORÍA -------------------
+async function renderAlertas() {
+  const rol = CP?.rol || '';
+  if (!['ejecutivo','admin'].includes(rol)) {
+    document.getElementById('main-content').innerHTML = '<div class="alert alert-warn"><div class="at">Acceso restringido a Ejecutivo y Admin.</div></div>';
+    return;
+  }
+  const {data:alertas} = await sb.from('alertas_categoria')
+    .select('*,conductores(id,nombre,codigo,categoria,flotas(nombre)),inspecciones(fecha,usuarios(nombre))')
+    .order('created_at',{ascending:false});
+  const pendientes = (alertas||[]).filter(a => a.estado === 'pendiente');
+  const resueltas  = (alertas||[]).filter(a => a.estado !== 'pendiente');
+  let html = '<h2 style="font-size:18px;font-weight:700;margin-bottom:4px">Alertas de categoría</h2>' +
+    '<p style="font-size:12px;color:var(--gray-400);margin-bottom:16px">Sugerencias de cambio de categoría. Historial permanente.</p>' +
+    '<div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">' +
+      '<div class="metric-card"><div class="metric-icon ic-amber"><i class="ti ti-tag"></i></div><div class="metric-val" style="color:var(--amber)">'+pendientes.length+'</div><div class="metric-lbl">Pendientes</div></div>' +
+      '<div class="metric-card"><div class="metric-icon ic-green"><i class="ti ti-check"></i></div><div class="metric-val" style="color:var(--green)">'+(resueltas.filter(a=>a.estado==='confirmada').length)+'</div><div class="metric-lbl">Confirmadas</div></div>' +
+      '<div class="metric-card"><div class="metric-icon" style="background:var(--gray-100)"><i class="ti ti-x" style="color:var(--gray-400)"></i></div><div class="metric-val">'+(resueltas.filter(a=>a.estado==='descartada').length)+'</div><div class="metric-lbl">Descartadas</div></div>' +
+    '</div>';
+  html += '<div class="card" style="margin-bottom:14px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div class="card-title" style="margin-bottom:0;color:var(--amber)"><i class="ti ti-clock"></i> Pendientes</div><span style="font-size:11px;color:var(--gray-400)">'+pendientes.length+' alertas</span></div>';
+  if (!pendientes.length) { html += '<p style="color:var(--gray-400);text-align:center;padding:20px">Sin alertas pendientes ✓</p>'; }
+  else {
+    html += '<table><thead><tr><th>Conductor</th><th>Cat. actual</th><th>Cat. sugerida</th><th>Inspector</th><th>Fecha</th><th>Días</th><th>Acciones</th></tr></thead><tbody>';
+    pendientes.forEach(function(a) {
+      var d = Math.round((new Date()-new Date(a.created_at))/864e5);
+      html += '<tr><td><div style="font-weight:600">'+(a.conductores?.nombre||'—')+'</div><div style="font-size:10px;color:var(--gray-400)">'+(a.conductores?.codigo||'')+(a.conductores?.flotas?.nombre?' · '+a.conductores.flotas.nombre:'')+'</div></td>' +
+        '<td>'+badge(a.categoria_actual||'—','gray')+'</td><td>'+badge(a.categoria_sugerida||'—','warn')+'</td>' +
+        '<td style="font-size:11px">'+(a.inspecciones?.usuarios?.nombre||'—')+'</td>' +
+        '<td style="font-size:11px">'+(a.fecha_inspeccion||'—')+'</td>' +
+        '<td>'+badge(d+'d', d>=7?'danger':d>=3?'warn':'info')+'</td>' +
+        '<td><div style="display:flex;gap:6px">' +
+          '<button class="btn btn-sm btn-primary" onclick="resolverAlerta(\'' + a.id + '\',\'confirmada\',\'' + (a.conductores?.id||'') + '\',\'' + (a.categoria_sugerida||'') + '\')">' + '<i class="ti ti-check"></i> Confirmar</button>' +
+          '<button class="btn btn-sm" onclick="resolverAlerta(\'' + a.id + '\',\'descartada\',null,null)"><i class="ti ti-x"></i> Descartar</button>' +
+        '</div></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div><div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><div class="card-title" style="margin-bottom:0">Historial resuelto</div><span style="font-size:11px;color:var(--gray-400)">'+resueltas.length+' registros — historial permanente</span></div>';
+  if (!resueltas.length) { html += '<p style="color:var(--gray-400);text-align:center;padding:16px">Sin historial aún.</p>'; }
+  else {
+    html += '<table><thead><tr><th>Conductor</th><th>Cat. anterior</th><th>Cat. sugerida</th><th>Inspector</th><th>Fecha</th><th>Estado</th><th>Resuelto por</th><th>Comentario</th></tr></thead><tbody>';
+    resueltas.forEach(function(a) {
+      html += '<tr><td><div style="font-weight:600">'+(a.conductores?.nombre||'—')+'</div><div style="font-size:10px;color:var(--gray-400)">'+(a.conductores?.codigo||'')+'</div></td>' +
+        '<td>'+badge(a.categoria_actual||'—','gray')+'</td><td>'+badge(a.categoria_sugerida||'—',a.estado==='confirmada'?'ok':'gray')+'</td>' +
+        '<td style="font-size:11px">'+(a.inspecciones?.usuarios?.nombre||'—')+'</td>' +
+        '<td style="font-size:11px">'+(a.fecha_inspeccion||'—')+'</td>' +
+        '<td>'+badge(a.estado,a.estado==='confirmada'?'ok':'gray')+'</td>' +
+        '<td style="font-size:11px">'+(a.resuelto_por_nombre||'—')+'</td>' +
+        '<td style="font-size:11px;color:var(--gray-400)">'+(a.comentario_resolucion||'—')+'</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+  document.getElementById('main-content').innerHTML = html;
+}
+
+async function resolverAlerta(id, estado, conductorId, categoriaConfirmada) {
+  var comentario = '';
+  if (estado === 'descartada') { comentario = prompt('Motivo del descarte (opcional):') || ''; }
+  else { if (!confirm('¿Confirmar cambio de categoría a "'+categoriaConfirmada+'" y actualizar al conductor?')) return; }
+  var {error} = await sb.from('alertas_categoria').update({
+    estado, resuelto_por:CU.id, resuelto_por_nombre:CP?.nombre||CU.email,
+    fecha_resolucion:fechaHoy(), comentario_resolucion:comentario
+  }).eq('id',id);
+  if (error) { alert('Error: '+error.message); return; }
+  if (estado === 'confirmada' && conductorId && categoriaConfirmada) {
+    var catMap = {'lite':'Lite','comfort':'Comfort','comfort_xl':'Comfort XL','xl':'XL','van':'Van'};
+    await sb.from('conductores').update({categoria:catMap[categoriaConfirmada]||categoriaConfirmada}).eq('id',conductorId);
+  }
+  renderAlertas();
+}
+
 // Event delegation for dynamically created buttons
 document.addEventListener('click', async function(e) {
   const editBtn = e.target.closest('.edit-opts');
@@ -2323,7 +2406,7 @@ async function toggleCampo(id, activo) {
 
 // ─── GESTIÓN PADRÓN ───────────────────────
 async function renderPadron() {
-  const {data:conds,count} = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,categoria,flotas(nombre)',{count:'exact'}).neq('estado','desactivado').neq('flotas.nombre','Flota Propia').order('nombre').limit(20);
+  const {data:conds,count} = await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,categoria,flotas(nombre)',{count:'exact'}).neq('estado','desactivado').order('nombre').limit(20);
   document.getElementById('main-content').innerHTML =
     '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Gestión de padrón</h2>' +
     '<div class="card" style="max-width:540px">' +
@@ -2342,34 +2425,50 @@ async function renderPadron() {
 async function procesarPadron() {
   const file = document.getElementById('padron-file').files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    const text = e.target.result;
-    const lines = text.split('\n').filter(l=>l.trim());
-    if (!lines.length) return;
-    const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
-    const rows = lines.slice(1).map(l => {
-      const cols = l.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
-      const obj = {};
-      headers.forEach((h,i)=>obj[h]=cols[i]||'');
-      return {
-        codigo: obj.codigo||obj['código']||obj.cod||'',
-        nombre: obj.nombre||obj.conductor||'',
-        placa: obj.placa||'',
-        vehiculo: obj.vehiculo||obj.auto||obj.carro||'',
-        flota: obj.flota||'',
-        estado: obj.estado||'activo',
-        categoria: obj.categoria||obj['categoría']||''
-      };
-    }).filter(r=>r.codigo&&r.nombre);
-    // Store rows in window variable to avoid inline JSON issues
+  const el = document.getElementById('padron-preview');
+  el.innerHTML = '<div class="loader">Procesando archivo...</div>';
+  try {
+    const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+    let rows = [];
+    if (isXlsx) {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), {type:'array', raw:true, cellFormula:false});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, {defval:'', raw:true});
+      rows = raw.map(r => {
+        const get = (k) => {
+          const keys = Object.keys(r);
+          const norm = s => String(s||'').toLowerCase().trim().replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u').replace(/[^a-z0-9]/g,'');
+          const match = keys.find(key => norm(key) === norm(k));
+          const val = match !== undefined ? r[match] : '';
+          if (typeof val === 'string' && val.startsWith('=')) return '';
+          return String(val === null || val === undefined ? '' : val).trim();
+        };
+        return { codigo:get('codigo'), nombre:get('nombre'), vehiculo:get('vehiculo'), placa:get('placa'), flota:get('flota'), estado:get('estado')||'activo', categoria:get('categoria') };
+      }).filter(r => r.codigo && r.nombre);
+    } else {
+      const text = await file.text();
+      const clean = text.replace(/^\uFEFF/, '');
+      const lines = clean.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) { el.innerHTML = '<div class="alert alert-danger"><div class="at">Archivo vacío</div></div>'; return; }
+      const sep = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
+      const norm = s => String(s||'').toLowerCase().trim().replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u').replace(/[^a-z0-9]/g,'');
+      const headers = lines[0].split(sep).map(h => norm(h));
+      rows = lines.slice(1).map(l => {
+        const cols = l.split(sep).map(c => c.trim().replace(/^"|"$/g,''));
+        const obj = {}; headers.forEach((h,i) => obj[h] = cols[i] || '');
+        return { codigo:obj.codigo||obj.cod||'', nombre:obj.nombre||obj.conductor||'', placa:obj.placa||'', vehiculo:obj.vehiculo||'', flota:obj.flota||'', estado:obj.estado||'activo', categoria:obj.categoria||'' };
+      }).filter(r => r.codigo && r.nombre);
+    }
     window._padronRows = rows;
-    document.getElementById('padron-preview').innerHTML =
-      '<div class="alert alert-info"><div class="at"><i class="ti ti-file-check"></i> '+rows.length+' conductores detectados</div></div>' +
-      '<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows)"><i class="ti ti-upload"></i> Confirmar carga ('+rows.length+')</button>' +
-      '<button class="btn" onclick="renderPadron()">Cancelar</button></div>';
-  };
-  reader.readAsText(file,'UTF-8');
+    el.innerHTML = rows.length === 0
+      ? '<div class="alert alert-danger"><div class="at">⚠ 0 conductores detectados. Verifica columnas: codigo, nombre, vehiculo, placa, flota, estado, categoria</div></div>'
+      : '<div class="alert alert-info"><div class="at"><i class="ti ti-file-check"></i> '+rows.length+' conductores detectados — '+rows.slice(0,3).map(r=>r.nombre+'('+r.codigo+')').join(', ')+'</div></div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows)"><i class="ti ti-upload"></i> Confirmar carga ('+rows.length+')</button>' +
+        '<button class="btn" onclick="renderPadron()">Cancelar</button></div>';
+  } catch(e) {
+    el.innerHTML = '<div class="alert alert-danger"><div class="at">Error: '+e.message+'</div></div>';
+  }
 }
 
 async function subirPadron(rows) {
@@ -2389,21 +2488,10 @@ async function subirPadron(rows) {
   }
   let ok=0,err=0;
   for (const r of rows) {
-    const normFlota = (s) => String(s||'').toLowerCase().trim()
-      .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-      .replace(/[^a-z0-9]/g,'');
-    const flota = flotas?.find(f => normFlota(f.nombre) === normFlota(r.flota)) ||
-                  flotas?.find(f => normFlota(f.nombre).includes(normFlota(r.flota)) || normFlota(r.flota).includes(normFlota(f.nombre)));
-    const normEstado = (s) => {
-      const v = String(s||'').toLowerCase().trim()
-        .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u');
-      if (v.includes('congel')) return 'congelado';
-      if (v.includes('desact') || v.includes('inact') || v.includes('baja')) return 'desactivado';
-      return 'activo';
-    };
+    const flota = flotas?.find(f=>f.nombre.toLowerCase().includes((r.flota||'').toLowerCase()));
     const {error} = await sb.from('conductores').upsert({
       codigo:r.codigo.toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,
-      placa:r.placa||null,flota_id:flota?.id||null,estado:normEstado(r.estado),
+      placa:r.placa||null,flota_id:flota?.id||null,estado:r.estado||'activo',
       categoria:r.categoria||null
     },{onConflict:'codigo'});
     error?err++:ok++;
