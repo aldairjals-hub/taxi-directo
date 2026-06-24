@@ -2410,17 +2410,25 @@ async function subirPadron(rows) {
       if (!confirm(msg)) return;
     }
   }
-  let ok=0,err=0;
+  const hoyD = new Date();
+  const dayD = hoyD.getDay();
+  const diffD = (dayD === 0 ? -6 : 1 - dayD);
+  const lunes = new Date(hoyD); lunes.setDate(hoyD.getDate() + diffD);
+  const semana = lunes.toISOString().slice(0,10);
+  const normFl = (s) => String(s||'').toLowerCase().trim().replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u').replace(/[^a-z0-9]/g,'');
+  const normEst = (s) => { const v=String(s||'').toLowerCase().trim().replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u'); if(v.includes('congel'))return 'congelado'; if(v.includes('desact')||v.includes('inact')||v.includes('baja'))return 'desactivado'; return 'activo'; };
+  let ok=0,err=0,errMsg='';
   for (const r of rows) {
-    const flota = flotas?.find(f=>f.nombre.toLowerCase().includes((r.flota||'').toLowerCase()));
+    const flota = flotas?.find(f => normFl(f.nombre) === normFl(r.flota)) || flotas?.find(f => normFl(f.nombre).includes(normFl(r.flota)) || normFl(r.flota).includes(normFl(f.nombre)));
     const {error} = await sb.from('conductores').upsert({
-      codigo:String(r.codigo).toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,
-      placa:r.placa||null,flota_id:flota?.id||null,estado:r.estado||'activo',
-      categoria:r.categoria||null
+      codigo:String(r.codigo).toUpperCase(), nombre:r.nombre,
+      vehiculo:r.vehiculo||null, placa:r.placa||null,
+      flota_id:flota?.id||null, estado:normEst(r.estado),
+      categoria:r.categoria||null, semana_carga:semana
     },{onConflict:'codigo'});
-    error?err++:ok++;
+    if(error){ err++; if(!errMsg) errMsg=error.message; } else ok++;
   }
-  document.getElementById('padron-preview').innerHTML = '<div class="alert alert-success"><div class="at">✓ '+ok+' conductores procesados'+(err?' · ⚠ '+err+' errores':'')+'</div></div>';
+  document.getElementById('padron-preview').innerHTML = '<div class="alert alert-'+(err&&!ok?'danger':'success')+'"><div class="at">'+(ok?'✓ '+ok+' conductores procesados':'')+( err?' · ⚠ '+err+' errores'+(errMsg?' ('+errMsg+')':''):'')+'</div></div>';
   setTimeout(()=>renderPadron(),1500);
 }
 
