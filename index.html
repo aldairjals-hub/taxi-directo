@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Taxi Directo — Gestión de Flota</title>
+<title>Directo — Web de Inspecciones</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
@@ -107,8 +107,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
 <div id="login-page">
   <div class="login-card">
     <div class="login-logo">
-      <div class="logo-mark"><span>TD</span></div>
-      <div><div class="login-title">Taxi Directo</div><div class="login-sub">Sistema de Gestión de Flota</div></div>
+      <div class="logo-mark"><span>D</span></div>
+      <div><div class="login-title">Taxi Directo</div><div class="login-sub">Web de Inspecciones</div></div>
     </div>
     <div class="form-group">
       <label class="form-label">Correo electrónico</label>
@@ -127,7 +127,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
 <div id="app">
   <div class="header">
     <div class="header-logo">
-      <div class="header-logo-mark"><span>TD</span></div>
+      <div class="header-logo-mark"><span>D</span></div>
       <div class="header-title">Taxi Directo</div>
     </div>
     <div class="header-right">
@@ -864,7 +864,7 @@ async function generarPDF(inspId) {
     '<table><thead><tr><th>Campo evaluado</th><th>Resultado</th></tr></thead><tbody>'+camposRows+'</tbody></table>' +
     (activos.length?'<div style="margin-top:12px;font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;margin-bottom:6px">Activos solicitados</div>'+activos.map(a=>'<div style="color:#B91C1C;font-size:11px;padding:2px 0">• '+(a.activo||a)+(Array.isArray(a.subpartes)&&a.subpartes.length?' ('+a.subpartes.join(', ')+')':'')+'</div>').join(''):'') +
     (i.observacion_general?'<div style="background:#F8FAFC;padding:9px;border-radius:6px;margin-top:10px;font-size:11px"><strong>Observación:</strong> '+i.observacion_general+'</div>':'') +
-    '<div class="footer"><span>Taxi Directo · Sistema de Gestión de Flota</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>' +
+    '<div class="footer"><span>Taxi Directo · Web de Inspecciones</span><span>'+new Date().toLocaleString('es-PE')+'</span></div>' +
     '<br class="no-print"><button onclick="window.print()" class="no-print" style="padding:8px 16px;background:#1A56DB;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">🖨 Imprimir / Guardar PDF</button>' +
     '</body></html>');
   w.document.close();
