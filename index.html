@@ -1853,7 +1853,7 @@ async function subirPadron(rows){
   for(const r of rows){
     if(!r.codigo)continue;
     const fl=flotas?.find(f=>f.nombre.toLowerCase()===( r.flota||'').toLowerCase());
-    const{error}=await sb.from('conductores').upsert({codigo:r.codigo.toUpperCase(),nombre:r.nombre||'',vehiculo:r.vehiculo||null,placa:r.placa||null,flota_id:fl?.id||null,estado:r.estado||'activo',categoria:r.categoria||null},{onConflict:'codigo'});
+    const{error}=await sb.from('conductores').upsert({codigo:String(r.codigo).toUpperCase(),nombre:r.nombre||'',vehiculo:r.vehiculo||null,placa:r.placa||null,flota_id:fl?.id||null,estado:r.estado||'activo',categoria:r.categoria||null},{onConflict:'codigo'});
     error?err++:ok++;
   }
   el.innerHTML='<div class="alert alert-success"><div class="at">✓ '+ok+' conductores procesados'+(err?' · '+err+' errores':'')+'. Recarga la página para ver el padrón actualizado.</div></div>';
@@ -2490,7 +2490,7 @@ async function subirPadron(rows) {
   for (const r of rows) {
     const flota = flotas?.find(f=>f.nombre.toLowerCase().includes((r.flota||'').toLowerCase()));
     const {error} = await sb.from('conductores').upsert({
-      codigo:r.codigo.toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,
+      codigo:String(r.codigo).toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,
       placa:r.placa||null,flota_id:flota?.id||null,estado:r.estado||'activo',
       categoria:r.categoria||null
     },{onConflict:'codigo'});
