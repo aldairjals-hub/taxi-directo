@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Taxi Directo — Gestión de Flota</title>
+<title>Directo — Web de Inspecciones</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
@@ -108,7 +108,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
   <div class="login-card">
     <div class="login-logo">
       <div class="logo-mark"><span>TD</span></div>
-      <div><div class="login-title">Taxi Directo</div><div class="login-sub">Sistema de Gestión de Flota</div></div>
+      <div class="login-sub">Web de Inspecciones</div>
     </div>
     <div class="form-group">
       <label class="form-label">Correo electrónico</label>
@@ -128,7 +128,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
   <div class="header">
     <div class="header-logo">
       <div class="header-logo-mark"><span>TD</span></div>
-      <div class="header-title">Taxi Directo</div>
+      
     </div>
     <div class="header-right">
       <span class="header-user" id="user-name"></span>
@@ -206,6 +206,7 @@ const NAV_ADMIN = [
   {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle',badge:true},
   {id:'incidencias',label:'Incidencias',icon:'ti-exclamation-circle'},
   {id:'activos',label:'Activos + SLA',icon:'ti-package'},
+  {id:'alertas',label:'Alertas categoría',icon:'ti-tag',badge:true},
   {id:'constructor',label:'Constructor form.',icon:'ti-forms'},
   {id:'reportes',label:'Reportes',icon:'ti-chart-bar'},
   {id:'padron',label:'Gestión padrón',icon:'ti-upload'},
@@ -229,6 +230,7 @@ const NAV_EJECUTIVO = [
   {id:'compromisos',label:'Compromisos',icon:'ti-alert-triangle',badge:true},
   {id:'incidencias',label:'Incidencias',icon:'ti-exclamation-circle'},
   {id:'activos',label:'Activos + SLA',icon:'ti-package'},
+  {id:'alertas',label:'Alertas categoría',icon:'ti-tag',badge:true},
   {id:'reportes',label:'Reportes',icon:'ti-chart-bar'},
   {id:'padron',label:'Gestión padrón',icon:'ti-upload'},
 ];
@@ -257,6 +259,7 @@ async function loadTab(tab) {
     compromisos: renderCompromisos,
     incidencias: renderIncidencias,
     activos: renderActivos,
+    alertas: renderAlertas,
     constructor: renderConstructor,
     reportes: renderReportes,
     padron: renderPadron,
@@ -594,10 +597,21 @@ async function buscarCondInsp() {
 }
 
 function checkLavado(val) { _pendingLavado = val.includes('meses')||val.includes('mes') ? val : null; }
+function normalizarCategoria(val) {
+  if (!val) return '';
+  const v = String(val).toLowerCase().trim().replace(/[_\-]/g,' ')
+    .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u');
+  if (v === 'comfort xl') return 'comfort_xl';
+  if (v.includes('comfort')) return 'comfort';
+  if (v === 'lite') return 'lite';
+  if (v === 'xl') return 'xl';
+  if (v === 'van') return 'van';
+  return v.replace(/\s+/g,'_');
+}
 function checkCategoria(val) {
-  const map = {'Lite':'lite','Comfort':'comfort','Comfort XL':'comfort_xl','XL':'xl','Van':'van'};
-  const sugerida = map[val];
-  _catAlerta = (sugerida && _inspCondCat && sugerida !== _inspCondCat) ? {sugerida, observada:val} : null;
+  const sugerida = normalizarCategoria(val);
+  const actual = normalizarCategoria(_inspCondCat);
+  _catAlerta = (sugerida && actual && sugerida !== actual) ? {sugerida, observada:val} : null;
 }
 
 async function guardarInsp() {
@@ -1769,82 +1783,6 @@ async function exportarReporteXlsx(){
 }
 
 // --- PADRÓN -------------------------------
-async function renderPadron(){
-  const{data:conds,count}=await sb.from('conductores').select('codigo,nombre,placa,vehiculo,estado,categoria,flotas(nombre)',{count:'exact'}).neq('estado','desactivado').order('nombre').limit(15);
-  document.getElementById('main-content').innerHTML=
-    '<h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Gestión de padrón</h2>'+
-    '<div class="card" style="max-width:600px">'+
-      '<div class="card-title">Subir nuevo padrón (.xlsx)</div>'+
-      '<div class="alert alert-info" style="margin-bottom:12px"><div class="at"><i class="ti ti-info-circle"></i> El archivo debe tener columnas: codigo, nombre, vehiculo, placa, flota, estado, categoria (opcional)</div></div>'+
-      '<div class="form-field" style="margin-bottom:12px"><label class="form-label2">Selecciona el archivo Excel</label><input type="file" id="padron-file" accept=".xlsx,.csv" onchange="parsearPadron()"></div>'+
-      '<div id="padron-preview"></div>'+
-    '</div>'+
-    '<div class="card">'+
-      '<div class="card-title">Padrón actual — '+( count||0)+' conductores activos y congelados</div>'+
-      '<table><thead><tr><th>Código</th><th>Conductor</th><th>Flota</th><th>Vehículo · Placa</th><th>Categoría</th><th>Estado</th></tr></thead><tbody>'+
-      (conds||[]).map(c=>'<tr><td style="font-family:monospace;font-size:10px">'+c.codigo+'</td><td style="font-weight:600">'+c.nombre+'</td><td>'+badge(c.flotas?.nombre||'—','info')+'</td><td style="font-size:11px">'+(c.vehiculo||'—')+(c.placa?' · '+c.placa:'')+'</td><td>'+badge(c.categoria||'—','gray')+'</td><td>'+badge(c.estado,c.estado==='activo'?'ok':'warn')+'</td></tr>').join('')+
-      '</tbody></table>'+
-      (count>15?'<div style="font-size:11px;color:var(--gray-400);margin-top:8px;text-align:center">Mostrando 15 de '+count+' — usa Reportes y filtros para ver todos</div>':'')+
-    '</div>';
-}
-
-async function parsearPadron(){
-  const file = document.getElementById('padron-file').files[0];
-  if(!file) return;
-  const el = document.getElementById('padron-preview');
-  el.innerHTML = '<div class="loader">Procesando archivo...</div>';
-  try {
-    const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
-    let data = [];
-    if(isXlsx){
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json(ws, {defval:'', raw:false});
-      data = raw.map(r=>{
-        const n = (k) => String(r[k]||r[k.charAt(0).toUpperCase()+k.slice(1)]||'').trim();
-        return {codigo:n('codigo'), nombre:n('nombre'), vehiculo:n('vehiculo'), placa:n('placa'), flota:n('flota'), estado:n('estado')||'activo', categoria:n('categoria')};
-      }).filter(r=>r.codigo && r.nombre);
-    } else {
-      const text = await file.text();
-      // Eliminar BOM si existe
-      const clean = text.replace(/^\uFEFF/, '');
-      const rows = clean.split(/\r?\n/).filter(r=>r.trim());
-      // Detectar separador: punto y coma o coma
-      const sep = rows[0].includes(';') ? ';' : ',';
-      const headers = rows[0].split(sep).map(h=>h.trim().toLowerCase()
-        .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-        .replace(/[^a-z]/g,''));
-      data = rows.slice(1).map(r=>{
-        const cols = r.split(sep);
-        const obj = {};
-        headers.forEach((h,i) => obj[h] = (cols[i]||'').trim().replace(/"/g,'').replace(/\r/g,''));
-        return obj;
-      }).filter(r => r.codigo && r.nombre);
-    }
-    window._padronRows2 = data;
-    el.innerHTML = '<div class="alert alert-info" style="margin-bottom:10px"><div class="at"><i class="ti ti-file-check"></i> '+data.length+' conductores detectados</div></div>'+
-      '<div style="font-size:11px;color:var(--gray-600);margin-bottom:10px">Vista previa: '+data.slice(0,3).map(r=>r.nombre+' ('+r.codigo+')').join(', ')+'</div>'+
-      '<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows2)"><i class="ti ti-upload"></i> Confirmar carga ('+data.length+' conductores)</button><button class="btn" onclick="renderPadron()">Cancelar</button></div>';
-  } catch(e) {
-    el.innerHTML = '<div class="alert alert-danger"><div class="at">Error: '+e.message+'</div></div>';
-  }
-}
-
-async function subirPadron(rows){
-  const{data:flotas}=await sb.from('flotas').select('id,nombre');
-  const el=document.getElementById('padron-preview');
-  el.innerHTML='<div class="loader">Cargando '+rows.length+' conductores...</div>';
-  let ok=0,err=0;
-  for(const r of rows){
-    if(!r.codigo)continue;
-    const fl=flotas?.find(f=>f.nombre.toLowerCase()===( r.flota||'').toLowerCase());
-    const{error}=await sb.from('conductores').upsert({codigo:r.codigo.toUpperCase(),nombre:r.nombre||'',vehiculo:r.vehiculo||null,placa:r.placa||null,flota_id:fl?.id||null,estado:r.estado||'activo',categoria:r.categoria||null},{onConflict:'codigo'});
-    error?err++:ok++;
-  }
-  el.innerHTML='<div class="alert alert-success"><div class="at">✓ '+ok+' conductores procesados'+(err?' · '+err+' errores':'')+'. Recarga la página para ver el padrón actualizado.</div></div>';
-}
-
 // --- USUARIOS -----------------------------
 async function renderUsuarios(){
   const{data}=await sb.from('usuarios').select('*').order('nombre');
@@ -2338,34 +2276,50 @@ async function renderPadron() {
 async function procesarPadron() {
   const file = document.getElementById('padron-file').files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    const text = e.target.result;
-    const lines = text.split('\n').filter(l=>l.trim());
-    if (!lines.length) return;
-    const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
-    const rows = lines.slice(1).map(l => {
-      const cols = l.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
-      const obj = {};
-      headers.forEach((h,i)=>obj[h]=cols[i]||'');
-      return {
-        codigo: obj.codigo||obj['código']||obj.cod||'',
-        nombre: obj.nombre||obj.conductor||'',
-        placa: obj.placa||'',
-        vehiculo: obj.vehiculo||obj.auto||obj.carro||'',
-        flota: obj.flota||'',
-        estado: obj.estado||'activo',
-        categoria: obj.categoria||obj['categoría']||''
-      };
-    }).filter(r=>r.codigo&&r.nombre);
-    // Store rows in window variable to avoid inline JSON issues
+  const el = document.getElementById('padron-preview');
+  el.innerHTML = '<div class="loader">Procesando archivo...</div>';
+  try {
+    const isXlsx = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+    let rows = [];
+    if (isXlsx) {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), {type:'array', raw:true, cellFormula:false});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, {defval:'', raw:true});
+      rows = raw.map(r => {
+        const get = (k) => {
+          const keys = Object.keys(r);
+          const norm = s => String(s||'').toLowerCase().trim().replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u').replace(/[^a-z0-9]/g,'');
+          const match = keys.find(key => norm(key) === norm(k));
+          const val = match !== undefined ? r[match] : '';
+          if (typeof val === 'string' && val.startsWith('=')) return '';
+          return String(val === null || val === undefined ? '' : val).trim();
+        };
+        return { codigo:get('codigo'), nombre:get('nombre'), vehiculo:get('vehiculo'), placa:get('placa'), flota:get('flota'), estado:get('estado')||'activo', categoria:get('categoria') };
+      }).filter(r => r.codigo && r.nombre);
+    } else {
+      const text = await file.text();
+      const clean = text.replace(/^\uFEFF/, '');
+      const lines = clean.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) { el.innerHTML = '<div class="alert alert-danger"><div class="at">Archivo vacío</div></div>'; return; }
+      const sep = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : ',';
+      const norm = s => String(s||'').toLowerCase().trim().replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u').replace(/[^a-z0-9]/g,'');
+      const headers = lines[0].split(sep).map(h => norm(h));
+      rows = lines.slice(1).map(l => {
+        const cols = l.split(sep).map(c => c.trim().replace(/^"|"$/g,''));
+        const obj = {}; headers.forEach((h,i) => obj[h] = cols[i] || '');
+        return { codigo:obj.codigo||obj.cod||'', nombre:obj.nombre||obj.conductor||'', placa:obj.placa||'', vehiculo:obj.vehiculo||'', flota:obj.flota||'', estado:obj.estado||'activo', categoria:obj.categoria||'' };
+      }).filter(r => r.codigo && r.nombre);
+    }
     window._padronRows = rows;
-    document.getElementById('padron-preview').innerHTML =
-      '<div class="alert alert-info"><div class="at"><i class="ti ti-file-check"></i> '+rows.length+' conductores detectados</div></div>' +
-      '<div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows)"><i class="ti ti-upload"></i> Confirmar carga ('+rows.length+')</button>' +
-      '<button class="btn" onclick="renderPadron()">Cancelar</button></div>';
-  };
-  reader.readAsText(file,'UTF-8');
+    el.innerHTML = rows.length === 0
+      ? '<div class="alert alert-danger"><div class="at">⚠ 0 conductores detectados. Verifica columnas: codigo, nombre, vehiculo, placa, flota, estado, categoria</div></div>'
+      : '<div class="alert alert-info"><div class="at"><i class="ti ti-file-check"></i> '+rows.length+' conductores detectados — '+rows.slice(0,3).map(r=>r.nombre+'('+r.codigo+')').join(', ')+'</div></div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary" onclick="subirPadron(window._padronRows)"><i class="ti ti-upload"></i> Confirmar carga ('+rows.length+')</button>' +
+        '<button class="btn" onclick="renderPadron()">Cancelar</button></div>';
+  } catch(e) {
+    el.innerHTML = '<div class="alert alert-danger"><div class="at">Error: '+e.message+'</div></div>';
+  }
 }
 
 async function subirPadron(rows) {
@@ -2383,17 +2337,25 @@ async function subirPadron(rows) {
       if (!confirm(msg)) return;
     }
   }
-  let ok=0,err=0;
+  const hoyD = new Date();
+  const dayD = hoyD.getDay();
+  const diffD = (dayD === 0 ? -6 : 1 - dayD);
+  const lunes = new Date(hoyD); lunes.setDate(hoyD.getDate() + diffD);
+  const semana = lunes.toISOString().slice(0,10);
+  const normFl = (s) => String(s||'').toLowerCase().trim().replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u').replace(/[^a-z0-9]/g,'');
+  const normEst = (s) => { const v=String(s||'').toLowerCase().trim().replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u'); if(v.includes('congel'))return 'congelado'; if(v.includes('desact')||v.includes('inact')||v.includes('baja'))return 'desactivado'; return 'activo'; };
+  let ok=0,err=0,errMsg='';
   for (const r of rows) {
-    const flota = flotas?.find(f=>f.nombre.toLowerCase().includes((r.flota||'').toLowerCase()));
+    const flota = flotas?.find(f => normFl(f.nombre) === normFl(r.flota)) || flotas?.find(f => normFl(f.nombre).includes(normFl(r.flota)) || normFl(r.flota).includes(normFl(f.nombre)));
     const {error} = await sb.from('conductores').upsert({
-      codigo:r.codigo.toUpperCase(),nombre:r.nombre,vehiculo:r.vehiculo||null,
-      placa:r.placa||null,flota_id:flota?.id||null,estado:r.estado||'activo',
-      categoria:r.categoria||null
+      codigo:String(r.codigo).toUpperCase(), nombre:r.nombre,
+      vehiculo:r.vehiculo||null, placa:r.placa||null,
+      flota_id:flota?.id||null, estado:normEst(r.estado),
+      categoria:r.categoria||null, semana_carga:semana
     },{onConflict:'codigo'});
-    error?err++:ok++;
+    if(error){ err++; if(!errMsg) errMsg=error.message; } else ok++;
   }
-  document.getElementById('padron-preview').innerHTML = '<div class="alert alert-success"><div class="at">✓ '+ok+' conductores procesados'+(err?' · ⚠ '+err+' errores':'')+'</div></div>';
+  document.getElementById('padron-preview').innerHTML = '<div class="alert alert-'+(err&&!ok?'danger':'success')+'"><div class="at">✓ '+ok+' conductores procesados'+(err?' · ⚠ '+err+' errores'+(errMsg?' ('+errMsg+')':''):'')+'</div></div>';
   setTimeout(()=>renderPadron(),1500);
 }
 
